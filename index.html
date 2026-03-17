@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>山形建材 日報アプリ</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet" />
+</head>
+<body>
+  <!-- リッチな動的背景 -->
+  <div class="background-mesh">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <!-- PIN認証オーバーレイ -->
+  <div id="pinOverlay" class="pin-overlay flex-center">
+    <div class="glass-card pin-card fade-in">
+      <div class="pin-header">
+        <span class="material-symbols-rounded pin-icon">lock</span>
+        <h2>日報アプリ</h2>
+        <p>パスコードを入力してください</p>
+      </div>
+      <div class="pin-display">
+        <div class="pin-dot"></div>
+        <div class="pin-dot"></div>
+        <div class="pin-dot"></div>
+        <div class="pin-dot"></div>
+      </div>
+      <div class="pin-keypad">
+        <button class="pin-btn" data-val="1">1</button>
+        <button class="pin-btn" data-val="2">2</button>
+        <button class="pin-btn" data-val="3">3</button>
+        <button class="pin-btn" data-val="4">4</button>
+        <button class="pin-btn" data-val="5">5</button>
+        <button class="pin-btn" data-val="6">6</button>
+        <button class="pin-btn" data-val="7">7</button>
+        <button class="pin-btn" data-val="8">8</button>
+        <button class="pin-btn" data-val="9">9</button>
+        <button class="pin-btn btn-action" id="pinClearBtn"><span class="material-symbols-rounded">backspace</span></button>
+        <button class="pin-btn" data-val="0">0</button>
+        <div class="pin-btn-empty"></div>
+      </div>
+      <div id="pinErrorMsg" class="pin-error hidden">パスコードが違います</div>
+    </div>
+  </div>
+
+  <div class="app-container" id="appContainer" style="display: none;">
+    <header class="glass-header">
+      <div class="header-content">
+        <div class="header-title">
+          <span class="material-symbols-rounded header-icon">edit_document</span>
+          <h1>山形建材 日報アプリ</h1>
+        </div>
+        <button id="themeToggle" class="theme-toggle" aria-label="テーマの切り替え">
+          <span class="material-symbols-rounded" id="themeIcon">dark_mode</span>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <form id="nippouForm" class="glass-card fade-in">
+        <input type="hidden" id="editRow" name="row" value="">
+        <input type="hidden" id="editAction" name="action" value="insert">
+        <div class="form-row">
+          <div class="form-group half">
+            <label for="date"><span class="material-symbols-rounded icon-sm">calendar_today</span> 日付</label>
+            <input type="date" id="date" name="date" required>
+          </div>
+          
+          <div class="form-group half">
+            <label for="time"><span class="material-symbols-rounded icon-sm">schedule</span> 時刻</label>
+            <input type="time" id="time" name="time" required>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="client"><span class="material-symbols-rounded icon-sm">domain</span> 得意先</label>
+          <input type="text" id="client" name="client" placeholder="例: 株式会社〇〇" required class="icon-padding-input">
+        </div>
+        
+        <div class="form-group">
+          <label for="content"><span class="material-symbols-rounded icon-sm">notes</span> 作業内容</label>
+          <textarea id="content" name="content" rows="4" placeholder="本日の作業内容や所感を記入してください" required></textarea>
+        </div>
+        
+        <div class="form-group">
+          <label><span class="material-symbols-rounded icon-sm">person</span> 担当者</label>
+          <div class="radio-group" style="gap: 0.5rem;">
+            <label class="radio-label" style="padding: 0.5rem 0.2rem; flex: 1; text-align: center; gap: 0.2rem;">
+              <input type="radio" name="author" value="社長" required>
+              <div class="custom-radio-wrap" style="display: none;"></div>
+              <span class="radio-text">社長</span>
+            </label>
+            <label class="radio-label" style="padding: 0.5rem 0.2rem; flex: 1; text-align: center; gap: 0.2rem;">
+              <input type="radio" name="author" value="伸明" required>
+              <div class="custom-radio-wrap" style="display: none;"></div>
+              <span class="radio-text">伸明</span>
+            </label>
+            <label class="radio-label" style="padding: 0.5rem 0.2rem; flex: 1; text-align: center; gap: 0.2rem;">
+              <input type="radio" name="author" value="横澤" required>
+              <div class="custom-radio-wrap" style="display: none;"></div>
+              <span class="radio-text">横澤</span>
+            </label>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label><span class="material-symbols-rounded icon-sm">label</span> 状況タグ</label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="status" value="[!]" required>
+              <div class="custom-radio-wrap"></div>
+              <span class="radio-text">完了</span> <span class="tag tag-done">[!]</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="status" value="[#]" required>
+              <div class="custom-radio-wrap"></div>
+              <span class="radio-text">継続中</span> <span class="tag tag-progress">[#]</span>
+            </label>
+          </div>
+        </div>
+        
+        <div class="form-actions">
+          <button type="submit" id="submitBtn" class="btn-primary">
+            <span class="btn-text" id="submitBtnText">送信する</span>
+            <span class="material-symbols-rounded btn-icon" id="submitIcon">send</span>
+            <div class="spinner" id="submitSpinner" style="display: none;"></div>
+          </button>
+          
+          <button type="button" id="cancelEditBtn" class="btn-secondary hidden" style="margin-top: 1rem;">
+            <span class="btn-text">訂正をやめる</span>
+            <span class="material-symbols-rounded btn-icon" style="font-size: 1.2rem;">close</span>
+          </button>
+        </div>
+      </form>
+      
+      <div id="message" class="message hidden"></div>
+      
+      <div class="section-divider fade-in" style="animation-delay: 0.1s;">
+        <span class="material-symbols-rounded">expand_more</span>
+      </div>
+      
+      <section class="search-section glass-card fade-in" style="animation-delay: 0.2s;">
+        <h2><span class="material-symbols-rounded icon-md">search</span> 日報検索</h2>
+        <form id="searchForm">
+          <div class="search-group">
+            <div class="search-input-wrapper">
+              <span class="material-symbols-rounded search-field-icon">search</span>
+              <input type="text" id="searchInput" placeholder="日付・得意先・内容など" required>
+            </div>
+            <button type="submit" id="searchBtn" class="btn-secondary">
+              <span class="btn-text">検索</span>
+              <div class="spinner search-spinner" style="display: none;"></div>
+            </button>
+          </div>
+        </form>
+        <div id="searchResults" class="search-results">
+          <!-- 検索結果表示エリア -->
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
