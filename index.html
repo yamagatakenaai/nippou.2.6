@@ -146,14 +146,32 @@
       </div>
       
       <section class="search-section glass-card fade-in" style="animation-delay: 0.2s;">
-        <h2><span class="material-symbols-rounded icon-md">search</span> 日報検索</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+          <h2 style="margin-bottom: 0;"><span class="material-symbols-rounded icon-md">search</span> 日報検索</h2>
+          
+          <div class="search-helpers" style="display: flex; gap: 0.5rem;">
+            <!-- 当日検索ボタン -->
+            <button type="button" id="searchTodayBtn" class="btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem; width: auto; border-radius: 2rem;">
+              <span class="material-symbols-rounded icon-xs">today</span> 当日
+            </button>
+            
+            <!-- カレンダー検索ボタン（裏に input type="date" を隠す） -->
+            <div style="position: relative; display: flex;">
+              <button type="button" id="searchCalendarBtn" class="btn-secondary" style="padding: 0.4rem; width: auto; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                <span class="material-symbols-rounded icon-sm">calendar_month</span>
+              </button>
+              <input type="date" id="searchDateInput" style="position: absolute; opacity: 0; width: 100%; height: 100%; top: 0; left: 0; cursor: pointer; padding: 0;">
+            </div>
+          </div>
+        </div>
+        
         <form id="searchForm">
           <div class="search-group">
             <div class="search-input-wrapper">
               <span class="material-symbols-rounded search-field-icon">search</span>
-              <input type="text" id="searchInput" placeholder="日付・得意先・内容など" required>
+              <input type="text" id="searchInput" placeholder="キー・日付・得意名" required>
             </div>
-            <button type="submit" id="searchBtn" class="btn-secondary">
+            <button type="submit" id="searchBtn" class="btn-secondary" style="padding: 0 1rem;">
               <span class="btn-text">検索</span>
               <div class="spinner search-spinner" style="display: none;"></div>
             </button>

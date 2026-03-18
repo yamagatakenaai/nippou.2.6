@@ -294,6 +294,39 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchBtnText = searchBtn.querySelector('.btn-text');
   const searchSpinner = searchBtn.querySelector('.search-spinner');
   const searchResultsEl = document.getElementById('searchResults');
+  
+  const searchTodayBtn = document.getElementById('searchTodayBtn');
+  const searchCalendarBtn = document.getElementById('searchCalendarBtn');
+  const searchDateInput = document.getElementById('searchDateInput');
+
+  // 当日検索ボタンのイベント
+  if (searchTodayBtn) {
+    searchTodayBtn.addEventListener('click', () => {
+      const now = new Date();
+      // YYYY/MM/DDの形式に整形
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      
+      searchInput.value = `${y}/${m}/${d}`;
+      // 自動で検索を実行
+      searchForm.dispatchEvent(new Event('submit'));
+    });
+  }
+
+  // カレンダー入力のイベント（日付が選択されたら自動入力して検索）
+  if (searchDateInput) {
+    searchDateInput.addEventListener('change', (e) => {
+      const val = e.target.value; // YYYY-MM-DD
+      if (val) {
+        searchInput.value = val.replace(/-/g, '/'); // 検索形式は YYYY/MM/DD
+        // 自動で検索を実行
+        searchForm.dispatchEvent(new Event('submit'));
+        // 連続使用のために一度リセットしておく
+        e.target.value = '';
+      }
+    });
+  }
 
   // 日付文字列を YYYY/MM/DD に整形
   function formatDateString(val) {
