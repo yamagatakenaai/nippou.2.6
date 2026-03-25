@@ -49,16 +49,58 @@
     </div>
   </div>
 
+  <!-- 更新履歴モーダル -->
+  <div id="historyModal" class="pin-overlay flex-center" style="display: none;">
+    <div class="glass-card pin-card fade-in" style="width: 90%; max-width: 450px; text-align: left; padding: 1.5rem; position: relative; max-height: 80vh; overflow-y: auto;">
+      <button type="button" id="closeHistoryBtn" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.5rem; color: var(--text-muted); cursor: pointer; transition: color 0.2s;">
+        <span class="material-symbols-rounded">close</span>
+      </button>
+      <h2 style="margin-bottom: 1.5rem; border-bottom: 1px solid var(--input-border); padding-bottom: 0.5rem; color: var(--text-main); display: flex; align-items: center; gap: 0.5rem;"><span class="material-symbols-rounded icon-md">history</span> 更新履歴</h2>
+      
+      <div class="history-item" style="margin-bottom: 2rem;">
+        <h3 style="color: var(--primary); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+          <span style="background: var(--primary); color: white; padding: 0.2rem 0.6rem; border-radius: 1rem; font-size: 0.85rem; font-weight: 600;">v1.1</span>
+          <span style="font-size: 0.9rem; color: var(--text-muted);">2026/03/25</span>
+        </h3>
+        <ul style="padding-left: 1.5rem; font-size: 0.9rem; color: var(--text-main); line-height: 1.6; margin: 0;">
+          <li>バージョン表示と更新履歴画面を追加しました</li>
+          <li>「継続中」で絞り込んで検索するボタンを追加しました</li>
+          <li>継続中の日報を赤枠でハイライトして見やすくしました</li>
+          <li>検索結果からワンタップで日報を「完了」状態に更新する機能を追加しました</li>
+        </ul>
+      </div>
+
+      <div class="history-item">
+        <h3 style="color: var(--text-main); margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.5rem;">
+          <span style="background: var(--input-border); color: var(--bg-color); padding: 0.2rem 0.6rem; border-radius: 1rem; font-size: 0.85rem; font-weight: 600;">v1.0</span>
+          <span style="font-size: 0.9rem; color: var(--text-muted);">2026/03/18</span>
+        </h3>
+        <ul style="padding-left: 1.5rem; font-size: 0.9rem; color: var(--text-main); line-height: 1.6; margin: 0;">
+          <li>担当者（社長・伸明・横澤）の切り替え・自動保存機能を追加しました</li>
+          <li>検索画面に「当日」「カレンダー」での一発検索機能を追加しました</li>
+          <li>PINコードでの起動アプリロック機能を追加しました</li>
+          <li>ダークモードでの入力が見づらい問題を修正しました</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
   <div class="app-container" id="appContainer" style="display: none;">
     <header class="glass-header">
       <div class="header-content">
-        <div class="header-title">
+        <div class="header-title" style="display: flex; align-items: center; gap: 0.5rem;">
           <span class="material-symbols-rounded header-icon">edit_document</span>
-          <h1>山形建材 日報アプリ</h1>
+          <h1 style="margin: 0;">山形建材 日報アプリ</h1>
+          <span class="version-badge">v1.1</span>
         </div>
-        <button id="themeToggle" class="theme-toggle" aria-label="テーマの切り替え">
-          <span class="material-symbols-rounded" id="themeIcon">dark_mode</span>
-        </button>
+        <div class="header-actions" style="display: flex; gap: 0.5rem; align-items: center;">
+          <button type="button" id="historyBtn" class="theme-toggle" aria-label="更新履歴" style="font-size: 0.8rem; padding: 0.3rem 0.6rem; width: auto; border-radius: 1rem; display: flex; gap: 0.2rem; align-items: center;">
+            <span class="material-symbols-rounded icon-sm">history</span> <span style="font-weight: 600;">履歴</span>
+          </button>
+          <button id="themeToggle" class="theme-toggle" aria-label="テーマの切り替え">
+            <span class="material-symbols-rounded" id="themeIcon">dark_mode</span>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -150,6 +192,11 @@
           <h2 style="margin-bottom: 0;"><span class="material-symbols-rounded icon-md">search</span> 日報検索</h2>
           
           <div class="search-helpers" style="display: flex; gap: 0.5rem;">
+            <!-- 継続中検索ボタン -->
+            <button type="button" id="searchProgressBtn" class="btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem; width: auto; border-radius: 2rem; color: #ef4444; border-color: #fecaca; background-color: rgba(239,68,68,0.05);">
+              <span class="material-symbols-rounded icon-xs">pending_actions</span> 継続中
+            </button>
+            
             <!-- 当日検索ボタン -->
             <button type="button" id="searchTodayBtn" class="btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem; width: auto; border-radius: 2rem;">
               <span class="material-symbols-rounded icon-xs">today</span> 当日

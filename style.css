@@ -154,12 +154,29 @@ body {
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  margin: 0;
 }
 
 .header-title h1 {
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+.version-badge {
+  font-size: 0.75rem;
+  background-color: var(--primary-light);
+  color: var(--primary);
+  padding: 0.2rem 0.5rem;
+  border-radius: 1rem;
+  font-weight: 700;
+  line-height: normal;
+  display: inline-block;
+  /* h1のグラデーションテキスト設定が子孫に影響した場合のリセット */
+  background-image: none !important;
+  -webkit-background-clip: border-box !important;
+  background-clip: border-box !important;
+  -webkit-text-fill-color: var(--primary) !important;
 }
 
 .theme-toggle {
@@ -510,6 +527,30 @@ button {
   border-radius: 0.5rem;
   border: 1px solid var(--input-border);
   line-height: 1.6;
+}
+
+.border-progress {
+  border: 2px solid #ef4444 !important; /* Red 500 */
+}
+
+.done-btn {
+  background-color: transparent;
+  color: #10b981; /* Emerald 500 */
+  border: 1px solid #10b981;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: auto;
+}
+
+.done-btn:hover {
+  background-color: #10b981;
+  color: white;
 }
 
 .no-results {

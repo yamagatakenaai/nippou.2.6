@@ -42,6 +42,26 @@ document.addEventListener('DOMContentLoaded', () => {
     setTheme(isDark ? 'light' : 'dark');
   });
 
+  // --- 更新履歴モーダル ---
+  const historyBtn = document.getElementById('historyBtn');
+  const closeHistoryBtn = document.getElementById('closeHistoryBtn');
+  const historyModal = document.getElementById('historyModal');
+
+  if (historyBtn && historyModal && closeHistoryBtn) {
+    historyBtn.addEventListener('click', () => {
+      historyModal.style.display = 'flex';
+    });
+    closeHistoryBtn.addEventListener('click', () => {
+      historyModal.style.display = 'none';
+    });
+    // モーダル外の灰色部分クリックで閉じる
+    historyModal.addEventListener('click', (e) => {
+      if (e.target === historyModal) {
+        historyModal.style.display = 'none';
+      }
+    });
+  }
+
   // --- PINコード認証機能 ---
   const CORRECT_PIN = '8005';
   let enteredPin = '';
@@ -295,9 +315,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchSpinner = searchBtn.querySelector('.search-spinner');
   const searchResultsEl = document.getElementById('searchResults');
   
+  const searchProgressBtn = document.getElementById('searchProgressBtn');
   const searchTodayBtn = document.getElementById('searchTodayBtn');
   const searchCalendarBtn = document.getElementById('searchCalendarBtn');
   const searchDateInput = document.getElementById('searchDateInput');
+
+  // 継続中検索ボタンのイベント
+  if (searchProgressBtn) {
+    searchProgressBtn.addEventListener('click', () => {
+      searchInput.value = '[#]';
+      // 自動で検索を実行
+      searchForm.dispatchEvent(new Event('submit'));
+    });
+  }
 
   // 当日検索ボタンのイベント
   if (searchTodayBtn) {
@@ -435,14 +465,21 @@ document.addEventListener('DOMContentLoaded', () => {
           .replace(/\r/g, '&#13;');
       };
       
+      // 継続中タグの判定
+      const hasProgressTag = (result.content || '').includes('[#]');
+      const cardClass = hasProgressTag ? 'result-card border-progress fade-in' : 'result-card fade-in';
+      
       return `
-        <div class="result-card fade-in" style="animation-delay: ${animDelay}s">
+        <div class="${cardClass}" style="animation-delay: ${animDelay}s">
           <div class="result-header">
             <div class="result-datetime">
               <span class="material-symbols-rounded icon-xs">calendar_clock</span>
               <span>${dateStr} ${timeStr}</span>
             </div>
-            ${rowId ? `<button type="button" class="edit-btn" data-row="${rowId}" data-date="${escapeHtmlAttr(result.date)}" data-time="${escapeHtmlAttr(result.time)}" data-client="${escapeHtmlAttr(result.client)}" data-content="${escapeHtmlAttr(result.content)}"><span class="material-symbols-rounded icon-xs">edit</span>訂正</button>` : ''}
+            <div style="display: flex; gap: 0.5rem;">
+              ${rowId && hasProgressTag ? `<button type="button" class="done-btn" data-row="${rowId}" data-date="${escapeHtmlAttr(result.date)}" data-time="${escapeHtmlAttr(result.time)}" data-client="${escapeHtmlAttr(result.client)}" data-content="${escapeHtmlAttr(result.content)}"><span class="material-symbols-rounded icon-xs">check_circle</span>完了</button>` : ''}
+              ${rowId ? `<button type="button" class="edit-btn" data-row="${rowId}" data-date="${escapeHtmlAttr(result.date)}" data-time="${escapeHtmlAttr(result.time)}" data-client="${escapeHtmlAttr(result.client)}" data-content="${escapeHtmlAttr(result.content)}"><span class="material-symbols-rounded icon-xs">edit</span>訂正</button>` : ''}
+            </div>
           </div>
           <div class="result-client">
             <span class="material-symbols-rounded icon-sm">person</span>
@@ -456,8 +493,62 @@ document.addEventListener('DOMContentLoaded', () => {
     searchResultsEl.innerHTML = html;
   }
   
-  // 訂正ボタンのクリックイベント（イベントデリゲーション）
-  searchResultsEl.addEventListener('click', (e) => {
+  // 訂正・完了ボタンのクリックイベント（イベントデリゲーション）
+  searchResultsEl.addEventListener('click', async (e) => {
+    // --- 完了ボタン処理 ---
+    const doneBtn = e.target.closest('.done-btn');
+    if (doneBtn) {
+      if (!confirm('この日報を完了に変更しますか？')) return;
+      
+      const rowId = doneBtn.getAttribute('data-row');
+      const dateVal = formatDateString(doneBtn.getAttribute('data-date')); // YYYY/MM/DDに整形
+      const timeVal = formatTimeString(doneBtn.getAttribute('data-time'));
+      const clientVal = doneBtn.getAttribute('data-client') || '';
+      let contentVal = doneBtn.getAttribute('data-content') || '';
+      
+      // コンテンツ内の[#]を[!]に置き換える
+      contentVal = contentVal.replace(/\[#\]/g, '[!]');
+      
+      // スピナー表示（ボタンの見た目変更）
+      const originalText = doneBtn.innerHTML;
+      doneBtn.innerHTML = '<span class="material-symbols-rounded icon-xs">sync</span>更新中';
+      doneBtn.disabled = true;
+      
+      try {
+        const urlEncodedData = new URLSearchParams();
+        urlEncodedData.append('action', 'update');
+        urlEncodedData.append('row', rowId);
+        urlEncodedData.append('date', dateVal);
+        urlEncodedData.append('time', timeVal);
+        urlEncodedData.append('client', clientVal);
+        urlEncodedData.append('content', contentVal);
+
+        const response = await fetch(GAS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: urlEncodedData.toString()
+        });
+
+        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+          showMessage('日報を完了状態に変更しました！', 'success');
+          // 自動で現在の検索ワードで再検索して画面を更新
+          searchForm.dispatchEvent(new Event('submit'));
+        } else {
+          throw new Error(result.message || '更新に失敗しました');
+        }
+      } catch (err) {
+        console.error(err);
+        showMessage('完了の更新に失敗しました。', 'error');
+        doneBtn.innerHTML = originalText;
+        doneBtn.disabled = false;
+      }
+      return;
+    }
+
+    // --- 訂正ボタン処理 ---
     const btn = e.target.closest('.edit-btn');
     if (!btn) return;
     
