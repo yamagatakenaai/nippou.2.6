@@ -395,23 +395,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let keyword = searchInput.value.trim();
     if (!keyword) return;
 
-    // 検索入力が日付形式（例: "2026/3/16", "2026年3月16日"）だった場合に「2026/03/16」形式へ整形し、検索をヒットさせやすくする
-    const fullDateMatch = keyword.match(/^(\d{4})[年/.-]\s*(\d{1,2})[月/.-]\s*(\d{1,2})日?$/);
-    if (fullDateMatch) {
-      const y = fullDateMatch[1];
-      const m = String(fullDateMatch[2]).padStart(2, '0');
-      const d = String(fullDateMatch[3]).padStart(2, '0');
-      keyword = `${y}/${m}/${d}`;
-    } else {
-      // "3/16", "3月16日" のような形式を "03/16" に整形する
-      const shortDateMatch = keyword.match(/^(\d{1,2})[月/.-]\s*(\d{1,2})日?$/);
-      if (shortDateMatch) {
-        const m = String(shortDateMatch[1]).padStart(2, '0');
-        const d = String(shortDateMatch[2]).padStart(2, '0');
-        keyword = `${m}/${d}`; 
-      }
-    }
-
     // UI状態更新：検索中
     searchBtn.disabled = true;
     searchBtnText.style.display = 'none';
