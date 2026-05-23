@@ -749,3 +749,46 @@ button {
   50% { transform: translateX(8px); }
   75% { transform: translateX(-8px); }
 }
+
+/* --- モバイル対応（ヘッダー崩れ・タップ防止対策） --- */
+@media (max-width: 480px) {
+  .glass-header {
+    padding: 0.75rem 0.75rem; /* 余白を狭く */
+  }
+  .header-title h1 {
+    font-size: 1rem; /* タイトルを小さく */
+  }
+  .header-icon {
+    font-size: 1.25rem;
+  }
+  .version-badge {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.35rem;
+  }
+  
+  .header-actions {
+    gap: 0.35rem; /* ボタン同士の間隔を少し狭く */
+  }
+  
+  /* スマホでは「履歴」の文字を消してアイコンのみにし、ボタンを丸くする */
+  #historyBtn {
+    width: 2.2rem;
+    height: 2.2rem;
+    border-radius: 50%;
+    padding: 0;
+    justify-content: center;
+  }
+  #historyBtn span:not(.material-symbols-rounded) {
+    display: none;
+  }
+  
+  /* 他のトグルボタンも少し小さくして収める */
+  .theme-toggle {
+    width: 2.2rem;
+    height: 2.2rem;
+  }
+  .theme-toggle .material-symbols-rounded {
+    font-size: 1.25rem;
+  }
+}
+
