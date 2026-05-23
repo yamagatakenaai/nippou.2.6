@@ -1,5 +1,6 @@
-// GASのウェブアプリURLをセット
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbwenUyI7wavfGx-4UCqujB75teY_5mr7ZHlR0r4qt825BwL8lRHThuBjPgIB7cW18SNcg/exec';
+// GASのウェブアプリURLをセット（localStorageに保存されていればそれを使用、なければデフォルトを使用）
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbwenUyI7wavfGx-4UCqujB75teY_5mr7ZHlR0r4qt825BwL8lRHThuBjPgIB7cW18SNcg/exec';
+let GAS_URL = localStorage.getItem('gas_url') || DEFAULT_GAS_URL;
 
 document.addEventListener('DOMContentLoaded', () => {
   // Service Worker Registration (for PWA)
@@ -58,6 +59,55 @@ document.addEventListener('DOMContentLoaded', () => {
     historyModal.addEventListener('click', (e) => {
       if (e.target === historyModal) {
         historyModal.style.display = 'none';
+      }
+    });
+  }
+
+  // --- 設定モーダル ---
+  const settingsBtn = document.getElementById('settingsBtn');
+  const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+  const settingsModal = document.getElementById('settingsModal');
+  const gasUrlInput = document.getElementById('gasUrlInput');
+  const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+
+  if (settingsBtn && settingsModal && closeSettingsBtn && gasUrlInput && saveSettingsBtn) {
+    // 設定ボタンを押した時にモーダルを開く
+    settingsBtn.addEventListener('click', () => {
+      // 現在のGAS_URLを入力欄にセット
+      gasUrlInput.value = GAS_URL;
+      settingsModal.style.display = 'flex';
+    });
+
+    // 閉じるボタン
+    closeSettingsBtn.addEventListener('click', () => {
+      settingsModal.style.display = 'none';
+    });
+
+    // 保存ボタン
+    saveSettingsBtn.addEventListener('click', () => {
+      const newUrl = gasUrlInput.value.trim();
+      if (!newUrl) {
+        alert('URLを入力してください。');
+        return;
+      }
+      if (!newUrl.startsWith('https://script.google.com/')) {
+        if (!confirm('入力されたURLはGoogle Apps ScriptのURL（https://script.google.com/...）ではない可能性がありますが、保存しますか？')) {
+          return;
+        }
+      }
+      
+      // localStorageに保存し、メモリ内のGAS_URL変数も更新
+      localStorage.setItem('gas_url', newUrl);
+      GAS_URL = newUrl;
+      
+      settingsModal.style.display = 'none';
+      showMessage('GASのURLを設定しました！', 'success');
+    });
+
+    // モーダル外クリックで閉じる
+    settingsModal.addEventListener('click', (e) => {
+      if (e.target === settingsModal) {
+        settingsModal.style.display = 'none';
       }
     });
   }
