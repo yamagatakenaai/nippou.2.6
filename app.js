@@ -1,6 +1,5 @@
-// GASのウェブアプリURLをセット（localStorageに保存されていればそれを使用、なければデフォルトを使用）
-const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbwenUyI7wavfGx-4UCqujB75teY_5mr7ZHlR0r4qt825BwL8lRHThuBjPgIB7cW18SNcg/exec';
-let GAS_URL = localStorage.getItem('gas_url') || DEFAULT_GAS_URL;
+// GASのウェブアプリURLをセット（localStorageに保存されていればそれを使用、なければ最初は空）
+let GAS_URL = localStorage.getItem('gas_url') || '';
 
 document.addEventListener('DOMContentLoaded', () => {
   // Service Worker Registration (for PWA)
@@ -253,6 +252,11 @@ document.addEventListener('DOMContentLoaded', () => {
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
 
+    if (!GAS_URL) {
+      showMessage('先に右上の設定（歯車）ボタンから、GASのURLを設定してください。', 'error');
+      return;
+    }
+
     // 送信ボタンを無効化してスピナーを表示
     submitBtn.disabled = true;
     submitBtnText.style.display = 'none';
@@ -442,6 +446,11 @@ document.addEventListener('DOMContentLoaded', () => {
   searchForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
+    if (!GAS_URL) {
+      searchResultsEl.innerHTML = '<div class="no-results" style="color: #991B1B;"><span class="material-symbols-rounded icon-md">error</span>先に右上の設定（歯車）ボタンから、GASのURLを設定してください。</div>';
+      return;
+    }
+    
     let keyword = searchInput.value.trim();
     if (!keyword) return;
 
@@ -532,6 +541,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const doneBtn = e.target.closest('.done-btn');
     if (doneBtn) {
       if (!confirm('この日報を完了に変更しますか？')) return;
+      
+      if (!GAS_URL) {
+        showMessage('先に右上の設定（歯車）ボタンから、GASのURLを設定してください。', 'error');
+        return;
+      }
       
       const rowId = doneBtn.getAttribute('data-row');
       const dateVal = formatDateString(doneBtn.getAttribute('data-date')); // YYYY/MM/DDに整形
