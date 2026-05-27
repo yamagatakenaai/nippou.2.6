@@ -610,8 +610,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 編集開始用関数
   const startEditing = (rowId, dateVal, timeVal, clientVal, contentVal) => {
-    // フォームまでスクロール
-    document.querySelector('.glass-header').scrollIntoView({ behavior: 'smooth' });
+    // 画面の最上部（入力画面）までスムーズにスクロール
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     
     // 値のセット
     editRowInput.value = rowId;
