@@ -1,680 +1,949 @@
-// GASのウェブアプリURLをセット（localStorageに保存されていればそれを使用、なければ最初は空）
-let GAS_URL = localStorage.getItem('gas_url') || '';
+// Google Apps Script (GAS) の Web API URL
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxk1fFGHDlf7mUSZvmph67vr_bCx24YbaLkPTPJOAVb7AQxQUkfQ53BCC8q2YTP8XCO/exec';
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Service Worker Registration (for PWA)
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('Service Worker Registered'))
-      .catch(err => console.log('Service Worker Registration Failed', err));
-  }
+    // 既存UI要素
+    const btnIn = document.getElementById('btn-in');
+    const btnOut = document.getElementById('btn-out');
+    const statusMessage = document.getElementById('status-message');
+    const actionButtons = document.getElementById('action-buttons');
+    const confirmSection = document.getElementById('confirm-section');
+    const confirmText = document.getElementById('confirm-text');
+    const datetimeInput = document.getElementById('datetime-input');
+    const btnConfirm = document.getElementById('btn-confirm');
+    const btnCancel = document.getElementById('btn-cancel');
+    const userTabs = document.getElementById('user-tabs');
 
-  // --- テーマ（ダークモード）設定機能 ---
-  const themeToggle = document.getElementById('themeToggle');
-  const themeIcon = document.getElementById('themeIcon');
-  
-  // OSのデフォルト設定チェックとローカルストレージからの読み込み
-  const getPreferredTheme = () => {
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme) {
-      return savedTheme;
-    }
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  };
-  
-  const setTheme = (theme) => {
-    if (theme === 'dark') {
-      document.body.classList.add('dark-theme');
-      themeIcon.textContent = 'light_mode';
-    } else {
-      document.body.classList.remove('dark-theme');
-      themeIcon.textContent = 'dark_mode';
-    }
-    localStorage.setItem('theme', theme);
-  };
-  
-  // 初回ロード時にテーマを反映
-  setTheme(getPreferredTheme());
-  
-  // トグルボタンで切り替え
-  themeToggle.addEventListener('click', () => {
-    const isDark = document.body.classList.contains('dark-theme');
-    setTheme(isDark ? 'light' : 'dark');
-  });
+    // 新規追加UI要素
+    const autoModeToggle = document.getElementById('auto-mode-toggle');
+    const btnPrevMonth = document.getElementById('btn-prev-month');
+    const btnNextMonth = document.getElementById('btn-next-month');
+    const calendarTitle = document.getElementById('calendar-title');
+    const btnHolidayMode = document.getElementById('btn-holiday-mode');
+    const calendarBody = document.getElementById('calendar-body');
+    const btnThemeToggle = document.getElementById('btn-theme-toggle');
 
-  // --- 更新履歴モーダル ---
-  const historyBtn = document.getElementById('historyBtn');
-  const closeHistoryBtn = document.getElementById('closeHistoryBtn');
-  const historyModal = document.getElementById('historyModal');
+    // 会社休日UI要素
+    const btnCompanyHoliday = document.getElementById('btn-company-holiday');
+    const companyHolidayModal = document.getElementById('company-holiday-modal');
+    const btnCloseCompanyModal = document.getElementById('btn-close-company-modal');
+    const companyHolidayStart = document.getElementById('company-holiday-start');
+    const companyHolidayEnd = document.getElementById('company-holiday-end');
+    const btnSaveCompanyHoliday = document.getElementById('btn-save-company-holiday');
 
-  if (historyBtn && historyModal && closeHistoryBtn) {
-    historyBtn.addEventListener('click', () => {
-      historyModal.style.display = 'flex';
-    });
-    closeHistoryBtn.addEventListener('click', () => {
-      historyModal.style.display = 'none';
-    });
-    // モーダル外の灰色部分クリックで閉じる
-    historyModal.addEventListener('click', (e) => {
-      if (e.target === historyModal) {
-        historyModal.style.display = 'none';
-      }
-    });
-  }
+    // モーダルUI要素
+    const editModal = document.getElementById('edit-modal');
+    const modalDateTitle = document.getElementById('modal-date-title');
+    const btnCloseModal = document.getElementById('btn-close-modal');
+    const modalRecordsList = document.getElementById('modal-records-list');
+    const formUser = document.getElementById('form-user');
+    const formType = document.getElementById('form-type');
+    const formTime = document.getElementById('form-time');
+    const formRowNum = document.getElementById('form-row-num');
+    const btnSaveRecord = document.getElementById('btn-save-record');
+    const formActionTitle = document.getElementById('form-action-title');
 
-  // --- 設定モーダル ---
-  const settingsBtn = document.getElementById('settingsBtn');
-  const closeSettingsBtn = document.getElementById('closeSettingsBtn');
-  const settingsModal = document.getElementById('settingsModal');
-  const gasUrlInput = document.getElementById('gasUrlInput');
-  const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+    // 状態管理
+    let pendingStatus = '';
+    let isHolidayMode = false;
+    let currentCalDate = new Date(); // カレンダーの表示月
+    let stampRecords = []; // GASから取得した全打刻データ
+    let activeUser = '横澤'; // 現在選択されているユーザー名
 
-  if (settingsBtn && settingsModal && closeSettingsBtn && gasUrlInput && saveSettingsBtn) {
-    // 設定ボタンを押した時にモーダルを開く
-    settingsBtn.addEventListener('click', () => {
-      // 現在のGAS_URLを入力欄にセット
-      gasUrlInput.value = GAS_URL;
-      settingsModal.style.display = 'flex';
-    });
+    // 日本の祝日判定用キャッシュ
+    let holidaysCache = {};
 
-    // 閉じるボタン
-    closeSettingsBtn.addEventListener('click', () => {
-      settingsModal.style.display = 'none';
-    });
+    // 1. 初期化処理
+    init();
 
-    // 保存ボタン
-    saveSettingsBtn.addEventListener('click', () => {
-      const newUrl = gasUrlInput.value.trim();
-      if (!newUrl) {
-        alert('URLを入力してください。');
-        return;
-      }
-      if (!newUrl.startsWith('https://script.google.com/')) {
-        if (!confirm('入力されたURLはGoogle Apps ScriptのURL（https://script.google.com/...）ではない可能性がありますが、保存しますか？')) {
-          return;
+    async function init() {
+        // テーマ切り替え初期化
+        const currentTheme = localStorage.getItem('theme') || 'dark';
+        if (currentTheme === 'light') {
+            document.body.classList.add('light-mode');
+            btnThemeToggle.textContent = '🌙';
+        } else {
+            document.body.classList.remove('light-mode');
+            btnThemeToggle.textContent = '☀️';
         }
-      }
-      
-      // localStorageに保存し、メモリ内のGAS_URL変数も更新
-      localStorage.setItem('gas_url', newUrl);
-      GAS_URL = newUrl;
-      
-      settingsModal.style.display = 'none';
-      showMessage('GASのURLを設定しました！', 'success');
-    });
 
-    // モーダル外クリックで閉じる
-    settingsModal.addEventListener('click', (e) => {
-      if (e.target === settingsModal) {
-        settingsModal.style.display = 'none';
-      }
-    });
-  }
-
-  // --- PINコード認証機能 ---
-  const CORRECT_PIN = '8005';
-  let enteredPin = '';
-  
-  const pinOverlay = document.getElementById('pinOverlay');
-  const appContainer = document.getElementById('appContainer');
-  const pinDots = document.querySelectorAll('.pin-dot');
-  const pinBtns = document.querySelectorAll('.pin-btn[data-val]');
-  const pinClearBtn = document.getElementById('pinClearBtn');
-  const pinErrorMsg = document.getElementById('pinErrorMsg');
-
-  // ローカルストレージに認証フラグがあるかチェック
-  if (localStorage.getItem('nippou_auth_passed') === 'true') {
-    pinOverlay.style.display = 'none';
-    appContainer.style.display = 'block';
-  } else {
-    // 認証されていない場合は画面を見せないようにする
-    appContainer.style.display = 'none';
-  }
-
-  const updatePinDisplay = () => {
-    pinDots.forEach((dot, index) => {
-      if (index < enteredPin.length) {
-        dot.classList.add('filled');
-      } else {
-        dot.classList.remove('filled');
-      }
-    });
-
-    if (enteredPin.length === 4) {
-      checkPin();
-    }
-  };
-
-  const checkPin = () => {
-    if (enteredPin === CORRECT_PIN) {
-      // 成功時
-      pinErrorMsg.classList.add('hidden');
-      localStorage.setItem('nippou_auth_passed', 'true'); // 今後スキップ
-      
-      // ふわっと消えるアニメーション
-      pinOverlay.style.opacity = '0';
-      setTimeout(() => {
-        pinOverlay.style.display = 'none';
-        appContainer.style.display = 'block';
-        // メイン画面のふわっと表示
-        appContainer.style.animation = 'fadeIn 0.5s ease-out both';
-      }, 500);
-      
-    } else {
-      // 失敗時
-      pinErrorMsg.classList.remove('hidden');
-      enteredPin = '';
-      
-      // エラー表示にアニメーションを追加するため一度クラスを消して再度付与
-      pinErrorMsg.style.animation = 'none';
-      void pinErrorMsg.offsetWidth; // リフローを強制
-      pinErrorMsg.style.animation = null;
-      
-      setTimeout(updatePinDisplay, 400); // 少し待ってからドットをクリア
-    }
-  };
-
-  pinBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (enteredPin.length < 4) {
-        enteredPin += btn.getAttribute('data-val');
-        pinErrorMsg.classList.add('hidden');
-        updatePinDisplay();
-      }
-    });
-  });
-
-  pinClearBtn.addEventListener('click', () => {
-    if (enteredPin.length > 0) {
-      enteredPin = enteredPin.slice(0, -1);
-      pinErrorMsg.classList.add('hidden');
-      updatePinDisplay();
-    }
-  });
-
-
-  // --- フォーム送信・編集機能 ---
-  const dateInput = document.getElementById('date');
-  const timeInput = document.getElementById('time');
-  const form = document.getElementById('nippouForm');
-  const submitBtn = document.getElementById('submitBtn');
-  const submitBtnText = document.getElementById('submitBtnText');
-  const submitSpinner = document.getElementById('submitSpinner');
-  const submitIcon = document.getElementById('submitIcon');
-  const messageEl = document.getElementById('message');
-  
-  const editRowInput = document.getElementById('editRow');
-  const editActionInput = document.getElementById('editAction');
-  const cancelEditBtn = document.getElementById('cancelEditBtn');
-
-  // 日付と時刻の初期セット（アプリを開いた現在の時刻）
-  const setCurrentDateTime = () => {
-    // 担当者の初期セット
-    const savedAuthor = localStorage.getItem('nippou_author');
-    if (savedAuthor) {
-      const authorRadio = document.querySelector(`input[name="author"][value="${savedAuthor}"]`);
-      if (authorRadio) authorRadio.checked = true;
-    }
-    
-    const now = new Date();
-    
-    // YYYY-MM-DD
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    dateInput.value = `${year}-${month}-${day}`;
-
-    // HH:MM
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    timeInput.value = `${hours}:${minutes}`;
-  };
-
-  setCurrentDateTime();
-
-  // 編集モードを終了して新規追加モードに戻る
-  const resetToInsertMode = () => {
-    editRowInput.value = '';
-    editActionInput.value = 'insert';
-    submitBtnText.textContent = '送信する';
-    submitIcon.textContent = 'send';
-    cancelEditBtn.classList.add('hidden');
-    
-    document.getElementById('client').value = '';
-    document.getElementById('content').value = '';
-    const radios = document.querySelectorAll('input[name="status"]');
-    radios.forEach(r => r.checked = false);
-    setCurrentDateTime();
-  };
-
-  cancelEditBtn.addEventListener('click', resetToInsertMode);
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    if (!GAS_URL) {
-      showMessage('先に右上の設定（歯車）ボタンから、GASのURLを設定してください。', 'error');
-      return;
-    }
-
-    // 送信ボタンを無効化してスピナーを表示
-    submitBtn.disabled = true;
-    submitBtnText.style.display = 'none';
-    if(submitIcon) submitIcon.style.display = 'none';
-    submitSpinner.style.display = 'block';
-    
-    messageEl.classList.add('hidden');
-    messageEl.className = 'message hidden';
-    
-    // 入力データの取得
-    const formData = new FormData(form);
-    const action = formData.get('action'); // "insert" または "update"
-    const row = formData.get('row');
-    let date = formData.get('date');
-    if (date) date = date.replace(/-/g, '/'); // YYYY-MM-DD フォーマットを YYYY/MM/DD に変換して送信する
-    const time = formData.get('time');
-    const client = formData.get('client');
-    const status = formData.get('status');
-    const author = formData.get('author');
-    const baseContent = formData.get('content');
-
-    // 担当者をローカルストレージに保存して次回以降自動選択
-    if (author) localStorage.setItem('nippou_author', author);
-    
-    // 「担当者」と「状況タグ」を内容の末尾に足す (編集時は2重にならないように処理)
-    let finalContent = baseContent.trim();
-    
-    // タグの除去（万が一含まれていた場合）
-    if (finalContent.endsWith('[!]') || finalContent.endsWith('[#]')) {
-      finalContent = finalContent.substring(0, finalContent.length - 3).trim();
-    }
-    // 担当者の除去（万が一含まれていた場合）
-    const authorsList = ['社長', '伸明', '横澤'];
-    for (const a of authorsList) {
-      if (finalContent.endsWith(a)) {
-        finalContent = finalContent.substring(0, finalContent.length - a.length).trim();
-        break;
-      }
-    }
-    
-    finalContent = `${finalContent}\n${author} ${status}`;
-
-    // POST用パラメータ作成
-    const urlEncodedData = new URLSearchParams();
-    urlEncodedData.append('action', action);
-    if (row) urlEncodedData.append('row', row);
-    urlEncodedData.append('date', date);
-    urlEncodedData.append('time', time);
-    urlEncodedData.append('client', client);
-    urlEncodedData.append('content', finalContent);
-
-    try {
-      // GASへPOSTリクエストを送信
-      const response = await fetch(GAS_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: urlEncodedData.toString()
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP Error: ${response.status}`);
-      }
-
-      const result = await response.json();
-      
-      if (result.status === 'success') {
-        showMessage(action === 'update' ? '日報を訂正（上書き）しました！' : '日報を送信しました！', 'success');
-        resetToInsertMode();
-        
-        // もし検索中なら自動で再検索する
-        if (searchResultsEl.innerHTML.trim() !== '' && searchInput.value.trim() !== '') {
-          searchForm.dispatchEvent(new Event('submit'));
-        }
-      } else {
-        throw new Error(result.message || '送信に失敗しました');
-      }
-
-    } catch (error) {
-      console.error('Error:', error);
-      showMessage('送信に失敗しました。', 'error');
-    } finally {
-      // ボタンの状態を元に戻す
-      submitBtn.disabled = false;
-      submitBtnText.style.display = 'block';
-      if(submitIcon) submitIcon.style.display = 'block';
-      submitSpinner.style.display = 'none';
-    }
-  });
-
-  // メッセージ表示用関数
-  function showMessage(msg, type) {
-    messageEl.textContent = msg;
-    messageEl.classList.add(type);
-    messageEl.classList.remove('hidden');
-    
-    if (type === 'success') {
-      setTimeout(() => {
-        messageEl.classList.add('hidden');
-      }, 5000);
-    }
-  }
-
-  // --- 検索機能 ---
-  const searchForm = document.getElementById('searchForm');
-  const searchInput = document.getElementById('searchInput');
-  const searchBtn = document.getElementById('searchBtn');
-  const searchBtnText = searchBtn.querySelector('.btn-text');
-  const searchSpinner = searchBtn.querySelector('.search-spinner');
-  const searchResultsEl = document.getElementById('searchResults');
-  
-  const searchProgressBtn = document.getElementById('searchProgressBtn');
-  const searchTodayBtn = document.getElementById('searchTodayBtn');
-  const searchCalendarBtn = document.getElementById('searchCalendarBtn');
-  const searchDateInput = document.getElementById('searchDateInput');
-
-  // 継続中検索ボタンのイベント
-  if (searchProgressBtn) {
-    searchProgressBtn.addEventListener('click', () => {
-      searchInput.value = '[#]';
-      // 自動で検索を実行
-      searchForm.dispatchEvent(new Event('submit'));
-    });
-  }
-
-  // 当日検索ボタンのイベント
-  if (searchTodayBtn) {
-    searchTodayBtn.addEventListener('click', () => {
-      const now = new Date();
-      // YYYY/MM/DDの形式に整形
-      const y = now.getFullYear();
-      const m = String(now.getMonth() + 1).padStart(2, '0');
-      const d = String(now.getDate()).padStart(2, '0');
-      
-      searchInput.value = `${y}/${m}/${d}`;
-      // 自動で検索を実行
-      searchForm.dispatchEvent(new Event('submit'));
-    });
-  }
-
-  // カレンダー入力のイベント（日付が選択されたら自動入力して検索）
-  if (searchDateInput) {
-    searchDateInput.addEventListener('change', (e) => {
-      const val = e.target.value; // YYYY-MM-DD
-      if (val) {
-        searchInput.value = val.replace(/-/g, '/'); // 検索形式は YYYY/MM/DD
-        // 自動で検索を実行
-        searchForm.dispatchEvent(new Event('submit'));
-        // 連続使用のために一度リセットしておく
-        e.target.value = '';
-      }
-    });
-  }
-
-  // 日付文字列を YYYY/MM/DD に整形
-  function formatDateString(val) {
-    if (!val) return '';
-    try {
-      const d = new Date(val);
-      if (isNaN(d.getTime())) return String(val);
-      return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
-    } catch(e) {
-      return String(val);
-    }
-  }
-
-  // 時刻文字列を HH:MM に整形（GASでのDate型などから）
-  function formatTimeString(val) {
-    if (!val) return '';
-    if (typeof val === 'string' && val.includes(':')) {
-      if (val.includes('T')) {
-        const timePart = val.split('T')[1].split(':');
-        return `${timePart[0]}:${timePart[1]}`;
-      }
-      return val.substring(0, 5);
-    }
-    try {
-      const d = new Date(val);
-      if (isNaN(d.getTime())) return String(val);
-      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-    } catch(e) {
-      return String(val);
-    }
-  }
-
-  searchForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    if (!GAS_URL) {
-      searchResultsEl.innerHTML = '<div class="no-results" style="color: #991B1B;"><span class="material-symbols-rounded icon-md">error</span>先に右上の設定（歯車）ボタンから、GASのURLを設定してください。</div>';
-      return;
-    }
-    
-    let keyword = searchInput.value.trim();
-    if (!keyword) return;
-
-    // UI状態更新：検索中
-    searchBtn.disabled = true;
-    searchBtnText.style.display = 'none';
-    searchSpinner.style.display = 'block';
-    searchResultsEl.innerHTML = '';
-
-    try {
-      // GASへGETリクエスト（CORS対策としてfetchを使用しパラメータを付与）
-      const response = await fetch(`${GAS_URL}?keyword=${encodeURIComponent(keyword)}`);
-      
-      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-
-      const data = await response.json();
-      
-      if (data.status === 'success') {
-        renderSearchResults(data.results);
-      } else {
-        throw new Error(data.message || '検索に失敗しました');
-      }
-    } catch (error) {
-      console.error('Search Error:', error);
-      searchResultsEl.innerHTML = `<div class="no-results" style="color: #991B1B;">エラーが発生しました: ${error.message}</div>`;
-    } finally {
-      searchBtn.disabled = false;
-      searchBtnText.style.display = 'block';
-      searchSpinner.style.display = 'none';
-    }
-  });
-
-  function renderSearchResults(results) {
-    if (!results || results.length === 0) {
-      searchResultsEl.innerHTML = '<div class="no-results fade-in"><span class="material-symbols-rounded icon-md">search_off</span>検索結果が見つかりませんでした。</div>';
-      return;
-    }
-
-    // 新しいものが上に来るように逆順
-    const html = results.reverse().map((result, index) => {
-      // resultにはGAS側から `row` が渡される前提
-      const rowId = result.row || '';
-      
-      const dateStr = formatDateString(result.date) || '日付なし';
-      const timeStr = formatTimeString(result.time) || '';
-      const animDelay = (index * 0.05).toFixed(2);
-      
-      // HTML属性用のエスケープ処理（改行やダブルクォーテーション対応）
-      const escapeHtmlAttr = (str) => {
-        if (!str) return '';
-        return String(str)
-          .replace(/"/g, '&quot;')
-          .replace(/\n/g, '&#10;')
-          .replace(/\r/g, '&#13;');
-      };
-      
-      // 継続中タグの判定
-      const hasProgressTag = (result.content || '').includes('[#]');
-      const cardClass = hasProgressTag ? 'result-card border-progress fade-in' : 'result-card fade-in';
-      
-      return `
-        <div class="${cardClass}" style="animation-delay: ${animDelay}s">
-          <div class="result-header">
-            <div class="result-datetime">
-              <span class="material-symbols-rounded icon-xs">calendar_clock</span>
-              <span>${dateStr} ${timeStr}</span>
-            </div>
-            <div style="display: flex; gap: 0.5rem;">
-              ${rowId && hasProgressTag ? `<button type="button" class="done-btn" data-row="${rowId}" data-date="${escapeHtmlAttr(result.date)}" data-time="${escapeHtmlAttr(result.time)}" data-client="${escapeHtmlAttr(result.client)}" data-content="${escapeHtmlAttr(result.content)}"><span class="material-symbols-rounded icon-xs">check_circle</span>完了</button>` : ''}
-              ${rowId ? `<button type="button" class="edit-btn" data-row="${rowId}" data-date="${escapeHtmlAttr(result.date)}" data-time="${escapeHtmlAttr(result.time)}" data-client="${escapeHtmlAttr(result.client)}" data-content="${escapeHtmlAttr(result.content)}"><span class="material-symbols-rounded icon-xs">edit</span>訂正</button>` : ''}
-            </div>
-          </div>
-          <div class="result-client">
-            <span class="material-symbols-rounded icon-sm">person</span>
-            ${result.client || '（得意先情報なし）'}
-          </div>
-          <div class="result-content">${result.content || ''}</div>
-        </div>
-      `;
-    }).join('');
-
-    searchResultsEl.innerHTML = html;
-  }
-  
-  // 訂正・完了ボタンのクリックイベント（イベントデリゲーション）
-  searchResultsEl.addEventListener('click', async (e) => {
-    // --- 完了ボタン処理 ---
-    const doneBtn = e.target.closest('.done-btn');
-    if (doneBtn) {
-      if (!confirm('この日報を完了に変更しますか？')) return;
-      
-      if (!GAS_URL) {
-        showMessage('先に右上の設定（歯車）ボタンから、GASのURLを設定してください。', 'error');
-        return;
-      }
-      
-      const rowId = doneBtn.getAttribute('data-row');
-      const dateVal = formatDateString(doneBtn.getAttribute('data-date')); // YYYY/MM/DDに整形
-      const timeVal = formatTimeString(doneBtn.getAttribute('data-time'));
-      const clientVal = doneBtn.getAttribute('data-client') || '';
-      let contentVal = doneBtn.getAttribute('data-content') || '';
-      
-      // コンテンツ内の[#]を[!]に置き換える
-      contentVal = contentVal.replace(/\[#\]/g, '[!]');
-      
-      // スピナー表示（ボタンの見た目変更）
-      const originalText = doneBtn.innerHTML;
-      doneBtn.innerHTML = '<span class="material-symbols-rounded icon-xs">sync</span>更新中';
-      doneBtn.disabled = true;
-      
-      try {
-        const urlEncodedData = new URLSearchParams();
-        urlEncodedData.append('action', 'update');
-        urlEncodedData.append('row', rowId);
-        urlEncodedData.append('date', dateVal);
-        urlEncodedData.append('time', timeVal);
-        urlEncodedData.append('client', clientVal);
-        urlEncodedData.append('content', contentVal);
-
-        const response = await fetch(GAS_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: urlEncodedData.toString()
+        btnThemeToggle.addEventListener('click', () => {
+            document.body.classList.toggle('light-mode');
+            const isLight = document.body.classList.contains('light-mode');
+            localStorage.setItem('theme', isLight ? 'light' : 'dark');
+            btnThemeToggle.textContent = isLight ? '🌙' : '☀️';
         });
 
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-        const result = await response.json();
+        // ラジオボタンの変更監視
+        const userRadios = document.querySelectorAll('input[name="user"]');
+        userRadios.forEach(radio => {
+            if (radio.checked) activeUser = radio.value;
+            radio.addEventListener('change', (e) => {
+                activeUser = e.target.value;
+                updateAutoModeToggleUI();
+                renderCalendar();
+            });
+        });
+
+        // オートモードの初期状態設定
+        updateAutoModeToggleUI();
+
+        // オートモードトグルの変更イベント
+        autoModeToggle.addEventListener('change', (e) => {
+            localStorage.setItem(`autoMode_${activeUser}`, e.target.checked);
+        });
+
+        // カレンダーの月移動イベント
+        btnPrevMonth.addEventListener('click', () => {
+            changeMonth(-1);
+        });
+
+        btnNextMonth.addEventListener('click', () => {
+            changeMonth(1);
+        });
+
+        // 休日設定モードのトグル
+        btnHolidayMode.addEventListener('click', () => {
+            isHolidayMode = !isHolidayMode;
+            if (isHolidayMode) {
+                btnHolidayMode.classList.add('active');
+            } else {
+                btnHolidayMode.classList.remove('active');
+            }
+        });
+
+        // 打刻ボタンイベント
+        btnIn.addEventListener('click', () => showConfirmSection('出勤'));
+        btnOut.addEventListener('click', () => showConfirmSection('退勤'));
+        btnCancel.addEventListener('click', hideConfirmSection);
+        btnConfirm.addEventListener('click', () => {
+            sendData(pendingStatus, datetimeInput.value, 'stamp');
+        });
+
+        // モーダルクローズ
+        btnCloseModal.addEventListener('click', closeModal);
+        window.addEventListener('click', (e) => {
+            if (e.target === editModal) closeModal();
+            if (e.target === companyHolidayModal) companyHolidayModal.classList.add('hidden');
+        });
+
+        // 会社休日モーダルを開く
+        btnCompanyHoliday.addEventListener('click', () => {
+            const today = formatDateKey(new Date());
+            companyHolidayStart.value = today;
+            companyHolidayEnd.value = today;
+            companyHolidayModal.classList.remove('hidden');
+        });
+
+        // 会社休日モーダルを閉じる
+        btnCloseCompanyModal.addEventListener('click', () => {
+            companyHolidayModal.classList.add('hidden');
+        });
+
+        // 会社休日の一括保存
+        btnSaveCompanyHoliday.addEventListener('click', saveCompanyHolidays);
+
+        // レコード保存ボタン
+        btnSaveRecord.addEventListener('click', saveRecordFromModal);
+
+        // データの取得とカレンダーの初期描画
+        await fetchRecords();
         
-        if (result.status === 'success') {
-          showMessage('日報を完了状態に変更しました！', 'success');
-          // 自動で現在の検索ワードで再検索して画面を更新
-          searchForm.dispatchEvent(new Event('submit'));
+        // オートモード自動打刻チェックの実行
+        checkAndRunAutoMode();
+
+        // 1分ごとに自動打刻と打刻データを同期・チェック（画面を開きっぱなしの時のリアルタイム対応）
+        setInterval(async () => {
+            await fetchRecords();
+            checkAndRunAutoMode();
+        }, 60000);
+
+        // スワイプによるカレンダー月移動（スマホ対応）
+        let touchStartX = 0;
+        let touchStartY = 0;
+        const calendarContainer = document.querySelector('.calendar-container');
+
+        calendarContainer.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+            touchStartY = e.changedTouches[0].screenY;
+        }, { passive: true });
+
+        calendarContainer.addEventListener('touchend', (e) => {
+            const touchEndX = e.changedTouches[0].screenX;
+            const touchEndY = e.changedTouches[0].screenY;
+            
+            const diffX = touchEndX - touchStartX;
+            const diffY = touchEndY - touchStartY;
+
+            // 左右のスワイプ量が60px以上、かつ上下のスクロール量より左右の移動量が大きい場合のみ実行
+            if (Math.abs(diffX) > 60 && Math.abs(diffX) > Math.abs(diffY)) {
+                if (diffX > 0) {
+                    // 右スワイプ -> 前月へ
+                    changeMonth(-1);
+                } else {
+                    // 左スワイプ -> 翌月へ
+                    changeMonth(1);
+                }
+            }
+        }, { passive: true });
+    }
+
+    // ユーザー選択に合わせたオートモードトグルUIの同期
+    function updateAutoModeToggleUI() {
+        const isAuto = localStorage.getItem(`autoMode_${activeUser}`) === 'true';
+        autoModeToggle.checked = isAuto;
+    }
+
+    // 日本の祝日判定ロジックの実装
+    function getJapaneseHolidays(year) {
+        if (holidaysCache[year]) return holidaysCache[year];
+
+        const holidays = {};
+        const add = (dateStr, name) => { holidays[dateStr] = name; };
+
+        // 固定祝日
+        add(`${year}-01-01`, "元日");
+        add(`${year}-02-11`, "建国記念の日");
+        add(`${year}-02-23`, "天皇誕生日");
+        add(`${year}-04-29`, "昭和の日");
+        add(`${year}-05-03`, "憲法記念日");
+        add(`${year}-05-04`, "みどりの日");
+        add(`${year}-05-05`, "こどもの日");
+        add(`${year}-08-11`, "山の日");
+        add(`${year}-11-03`, "文化の日");
+        add(`${year}-11-23`, "勤労感謝の日");
+
+        // ハッピーマンデー (第N月曜日)
+        const getHappyMonday = (month, weekNum) => {
+            let count = 0;
+            for (let day = 1; day <= 31; day++) {
+                const date = new Date(year, month - 1, day);
+                if (date.getDay() === 1) { // 月曜日
+                    count++;
+                    if (count === weekNum) {
+                        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    }
+                }
+            }
+            return null;
+        };
+
+        const seijin = getHappyMonday(1, 2);
+        if (seijin) add(seijin, "成人の日");
+
+        const umi = getHappyMonday(7, 3);
+        if (umi) add(umi, "海の日");
+
+        const keiro = getHappyMonday(9, 3);
+        if (keiro) add(keiro, "敬老の日");
+
+        const sports = getHappyMonday(10, 2);
+        if (sports) add(sports, "スポーツの日");
+
+        // 春分の日 (簡易計算)
+        let springDay = Math.floor(20.8431 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
+        add(`${year}-03-${String(springDay).padStart(2, '0')}`, "春分の日");
+
+        // 秋分の日 (簡易計算)
+        let autumnDay = Math.floor(23.2488 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
+        add(`${year}-09-${String(autumnDay).padStart(2, '0')}`, "秋分の日");
+
+        // 振替休日
+        const holidayDates = Object.keys(holidays).sort();
+        holidayDates.forEach(dateStr => {
+            const date = new Date(dateStr);
+            if (date.getDay() === 0) { // 日曜日
+                let target = new Date(date);
+                while (true) {
+                    target.setDate(target.getDate() + 1);
+                    const targetStr = formatDateKey(target);
+                    if (!holidays[targetStr]) {
+                        add(targetStr, "振替休日");
+                        break;
+                    }
+                }
+            }
+        });
+
+        // 国民の休日
+        for (let month = 1; month <= 12; month++) {
+            for (let day = 2; day <= 30; day++) {
+                const currentStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const date = new Date(year, month - 1, day);
+                if (date.getDay() !== 0 && !holidays[currentStr]) {
+                    const prev = new Date(date);
+                    prev.setDate(prev.getDate() - 1);
+                    const next = new Date(date);
+                    next.setDate(next.getDate() + 1);
+                    if (holidays[formatDateKey(prev)] && holidays[formatDateKey(next)] && 
+                        holidays[formatDateKey(prev)] !== "振替休日" && holidays[formatDateKey(next)] !== "振替休日") {
+                        add(currentStr, "国民の休日");
+                    }
+                }
+            }
+        }
+
+        holidaysCache[year] = holidays;
+        return holidays;
+    }
+
+    function formatDateKey(date) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    // 月移動アニメーション制御 (スワイプ方向に対応)
+    function changeMonth(direction) {
+        // スライドアウトクラスを適用
+        if (direction === 1) {
+            calendarBody.classList.add('slide-out-left');
         } else {
-          throw new Error(result.message || '更新に失敗しました');
+            calendarBody.classList.add('slide-out-right');
         }
-      } catch (err) {
-        console.error(err);
-        showMessage('完了の更新に失敗しました。', 'error');
-        doneBtn.innerHTML = originalText;
-        doneBtn.disabled = false;
-      }
-      return;
+
+        // アニメーション進行中に描画を更新し、逆方向からスライドイン
+        setTimeout(() => {
+            currentCalDate.setMonth(currentCalDate.getMonth() + direction);
+            renderCalendar();
+
+            calendarBody.classList.remove('slide-out-left', 'slide-out-right');
+            if (direction === 1) {
+                calendarBody.classList.add('slide-in-right');
+            } else {
+                calendarBody.classList.add('slide-in-left');
+            }
+
+            // アニメーション完了後にクラスをクリア
+            setTimeout(() => {
+                calendarBody.classList.remove('slide-in-left', 'slide-in-right');
+            }, 250);
+        }, 150);
     }
 
-    // --- 訂正ボタン処理 ---
-    const btn = e.target.closest('.edit-btn');
-    if (!btn) return;
-    
-    const rowId = btn.getAttribute('data-row');
-    const dateVal = btn.getAttribute('data-date');
-    const timeVal = btn.getAttribute('data-time');
-    const clientVal = btn.getAttribute('data-client');
-    const contentVal = btn.getAttribute('data-content');
-    
-    startEditing(rowId, dateVal, timeVal, clientVal, contentVal);
-  });
-
-  // 編集開始用関数
-  const startEditing = (rowId, dateVal, timeVal, clientVal, contentVal) => {
-    // 画面の最上部（入力画面）までスムーズにスクロール
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    
-    // 値のセット
-    editRowInput.value = rowId;
-    editActionInput.value = 'update';
-    
-    // 日付 (YYYY-MM-DDに直してセット)
-    let ymd = dateVal || '';
-    if(ymd.includes('/')) ymd = ymd.replace(/\//g, '-');
-    dateInput.value = ymd;
-    
-    // 時刻
-    timeInput.value = formatTimeString(timeVal);
-    
-    const clientInput = document.getElementById('client');
-    clientInput.value = clientVal || '';
-    
-    // コンテンツとタグ・担当者の分離
-    let rawContent = contentVal || '';
-    let foundTag = false;
-    const radiosStatus = document.querySelectorAll('input[name="status"]');
-    const radiosAuthor = document.querySelectorAll('input[name="author"]');
-    
-    // 改行などの余分な空白を削除してからタグ判定
-    rawContent = rawContent.trim();
-    
-    if (rawContent.endsWith('[!]')) {
-      radiosStatus.forEach(r => { if(r.value === '[!]') r.checked = true; });
-      rawContent = rawContent.substring(0, rawContent.length - 3).trim();
-      foundTag = true;
-    } else if (rawContent.endsWith('[#]')) {
-      radiosStatus.forEach(r => { if(r.value === '[#]') r.checked = true; });
-      rawContent = rawContent.substring(0, rawContent.length - 3).trim();
-      foundTag = true;
-    }
-    
-    // 担当者の抜き出し
-    const authors = ['社長', '伸明', '横澤'];
-    let foundAuthor = false;
-    if (foundTag) {
-      for (const a of authors) {
-        if (rawContent.endsWith(a)) {
-          radiosAuthor.forEach(r => { if(r.value === a) r.checked = true; });
-          rawContent = rawContent.substring(0, rawContent.length - a.length).trim();
-          foundAuthor = true;
-          break;
+    // 2. GASからのデータ取得
+    async function fetchRecords() {
+        try {
+            // キャッシュ破棄用のタイムスタンプをパラメータに付与
+            const response = await fetch(`${GAS_URL}?t=${new Date().getTime()}`);
+            if (!response.ok) throw new Error('ネットワークエラー');
+            stampRecords = await response.json();
+            renderCalendar();
+        } catch (error) {
+            console.error('データ取得失敗:', error);
+            showStatusMessage('❌ データの取得に失敗しました。再読み込みしてください。', '#ef4444');
         }
-      }
     }
-    
-    // もしタグが見つからなかったら一度ラジオボタンのチェックを外す
-    if(!foundTag) {
-      radiosStatus.forEach(r => r.checked = false);
+
+    // 3. カレンダーの描画処理
+    function renderCalendar() {
+        const year = currentCalDate.getFullYear();
+        const month = currentCalDate.getMonth(); // 0-11
+        
+        calendarTitle.textContent = `${year}年 ${month + 1}月`;
+        calendarBody.innerHTML = '';
+
+        const holidays = getJapaneseHolidays(year);
+        const todayStr = formatDateKey(new Date());
+
+        // 月の最初の日と総日数
+        const firstDayIndex = new Date(year, month, 1).getDay();
+        const totalDays = new Date(year, month + 1, 0).getDate();
+
+        // 前月の空枠
+        for (let i = 0; i < firstDayIndex; i++) {
+            const emptyCell = document.createElement('div');
+            emptyCell.classList.add('calendar-day', 'empty');
+            calendarBody.appendChild(emptyCell);
+        }
+
+        // 当月の日付マス生成
+        for (let day = 1; day <= totalDays; day++) {
+            const date = new Date(year, month, day);
+            const dateStr = formatDateKey(date);
+            
+            const cell = document.createElement('div');
+            cell.classList.add('calendar-day');
+
+            // 今日の日付ならクラスを付与
+            if (dateStr === todayStr) {
+                cell.classList.add('today');
+            }
+
+            // 曜日・祝日判定
+            const dayOfWeek = date.getDay();
+            if (dayOfWeek === 0) cell.classList.add('sunday');
+            if (dayOfWeek === 6) cell.classList.add('saturday');
+            
+            if (holidays[dateStr]) {
+                cell.classList.add('holiday-day');
+                cell.title = holidays[dateStr];
+            }
+
+            // 日付表示
+            const numLabel = document.createElement('div');
+            numLabel.classList.add('day-number');
+            numLabel.textContent = day;
+            cell.appendChild(numLabel);
+
+            // この日付の打刻データをフィルタリング
+            const dayRecords = stampRecords.filter(r => r.datetime && r.datetime.startsWith(dateStr));
+            
+            const bandList = document.createElement('div');
+            bandList.classList.add('day-band-list');
+
+            // 帯の表示判定 (表示順：会社休日、個別休日、横澤出勤、横澤退勤, 鈴木出勤, 鈴木退勤)
+            const companyHoliday = dayRecords.find(r => r.name === '会社' && r.status === '休日');
+            const yokozawaHoliday = dayRecords.find(r => r.name === '横澤' && r.status === '休日');
+            const suzukiHoliday = dayRecords.find(r => r.name === '鈴木' && r.status === '休日');
+
+            // 0. 会社全体休日 (最上部に赤い帯で「休日」と表示)
+            if (companyHoliday) {
+                const b = document.createElement('div');
+                b.classList.add('day-band', 'band-company-holiday');
+                b.textContent = '休日';
+                b.title = '会社休日';
+                bandList.appendChild(b);
+            }
+
+            const yokozawaIn = dayRecords.find(r => r.name === '横澤' && r.status === '出勤');
+            const yokozawaOut = dayRecords.find(r => r.name === '横澤' && r.status === '退勤');
+            const suzukiIn = dayRecords.find(r => r.name === '鈴木' && r.status === '出勤');
+            const suzukiOut = dayRecords.find(r => r.name === '鈴木' && r.status === '退勤');
+
+            // 1. 手動の休日 (横澤: 赤, 鈴木: オレンジ、名前のみ表示)
+            if (yokozawaHoliday) {
+                const b = document.createElement('div');
+                b.classList.add('day-band', 'band-yokozawa-holiday');
+                b.textContent = '横澤';
+                b.title = '横澤 休日';
+                bandList.appendChild(b);
+            }
+            if (suzukiHoliday) {
+                const b = document.createElement('div');
+                b.classList.add('day-band', 'band-suzuki-holiday');
+                b.textContent = '鈴木';
+                b.title = '鈴木 休日';
+                bandList.appendChild(b);
+            }
+
+            // 2. 横澤 出勤 (文字なし)
+            if (yokozawaIn) {
+                const b = document.createElement('div');
+                b.classList.add('day-band', 'band-yokozawa');
+                b.title = `横澤 出勤 ${formatTime(yokozawaIn.datetime)}`;
+                bandList.appendChild(b);
+            }
+            // 3. 横澤 退勤 (文字なし)
+            if (yokozawaOut) {
+                const b = document.createElement('div');
+                b.classList.add('day-band', 'band-yokozawa');
+                b.title = `横澤 退勤 ${formatTime(yokozawaOut.datetime)}`;
+                bandList.appendChild(b);
+            }
+            // 4. 鈴木 出勤 (文字なし)
+            if (suzukiIn) {
+                const b = document.createElement('div');
+                b.classList.add('day-band', 'band-suzuki');
+                b.title = `鈴木 出勤 ${formatTime(suzukiIn.datetime)}`;
+                bandList.appendChild(b);
+            }
+            // 5. 鈴木 退勤 (文字なし)
+            if (suzukiOut) {
+                const b = document.createElement('div');
+                b.classList.add('day-band', 'band-suzuki');
+                b.title = `鈴木 退勤 ${formatTime(suzukiOut.datetime)}`;
+                bandList.appendChild(b);
+            }
+
+            cell.appendChild(bandList);
+
+            // クリックイベント
+            cell.addEventListener('click', () => handleDayClick(dateStr, dayRecords));
+
+            calendarBody.appendChild(cell);
+        }
     }
-    
-    document.getElementById('content').value = rawContent;
-    
-    // ボタンの見た目を変える
-    submitBtnText.textContent = '更新する';
-    submitIcon.textContent = 'save';
-    cancelEditBtn.classList.remove('hidden');
-    
-    // 少しハイライトアニメーション
-    form.style.transform = 'scale(1.02)';
-    setTimeout(()=> { form.style.transform = 'scale(1)'; }, 200);
-  };
+
+    // 日時文字列から HH:mm を抽出
+    function formatTime(datetimeStr) {
+        if (!datetimeStr || datetimeStr.length < 16) return '';
+        // YYYY-MM-DD HH:mm:ss または YYYY-MM-DDTHH:mm 形式
+        const parts = datetimeStr.split(/[ T]/);
+        if (parts.length > 1) {
+            return parts[1].substring(0, 5);
+        }
+        return '';
+    }
+
+    // 日付セルクリック時の処理
+    async function handleDayClick(dateStr, dayRecords) {
+        if (isHolidayMode) {
+            // 休日トグル処理
+            const existingHoliday = dayRecords.find(r => r.name === activeUser && r.status === '休日');
+            
+            if (existingHoliday) {
+                // 既に休日なら削除
+                showStatusMessage(`${activeUser}の休日設定を解除中...`, '#fff');
+                await deleteRecord(existingHoliday.rowNum);
+            } else {
+                // 休日でなければ登録 (日付のみ送信)
+                showStatusMessage(`${activeUser}の休日を設定中...`, '#fff');
+                await sendData('休日', dateStr, 'stamp');
+            }
+        } else {
+            // 編集・詳細ポップアップを開く
+            openEditModal(dateStr, dayRecords);
+        }
+    }
+
+    // 4. 既存打刻送信画面の制御
+    function showConfirmSection(status) {
+        pendingStatus = status;
+        confirmText.textContent = `${activeUser}さんの「${status}」この時間でよろしいですか？`;
+
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        datetimeInput.value = now.toISOString().slice(0, 16);
+
+        actionButtons.classList.add('hidden');
+        userTabs.classList.add('hidden');
+        confirmSection.classList.remove('hidden');
+        statusMessage.textContent = '';
+    }
+
+    function hideConfirmSection() {
+        confirmSection.classList.add('hidden');
+        actionButtons.classList.remove('hidden');
+        userTabs.classList.remove('hidden');
+    }
+
+    // 5. データ送信 (GASへのPOST)
+    async function sendData(status, datetimeString, action = 'stamp', rowNum = null, isAuto = false) {
+        const formattedDate = datetimeString.replace('T', ' ').replace(/-/g, '/');
+        
+        if (!isAuto) {
+            hideConfirmSection();
+            showStatusMessage(`${activeUser}の${status}を記録中...`, '#fff');
+            setButtonsDisabled(true);
+        }
+
+        const formData = new URLSearchParams();
+        formData.append('action', action);
+        formData.append('name', activeUser);
+        formData.append('status', status);
+        formData.append('datetime', datetimeString);
+        if (rowNum) formData.append('rowNum', rowNum);
+
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                const msg = isAuto 
+                    ? `🤖 オートモード: ${activeUser}の${status}を自動打刻しました。\n（時間：${formattedDate}）`
+                    : `✅ ${activeUser}の${status}を記録しました！\n（時間：${formattedDate}）`;
+                
+                showStatusMessage(msg, '#4cd964');
+                await fetchRecords(); // カレンダー再描画と同期
+            } else {
+                throw new Error(result.message || 'サーバーエラー');
+            }
+
+        } catch (error) {
+            console.error('Error:', error);
+            showStatusMessage('❌ 送信に失敗しました。スプレッドシートを確認してください。', '#ef4444');
+        } finally {
+            if (!isAuto) {
+                setButtonsDisabled(false);
+                setTimeout(() => {
+                    statusMessage.textContent = '';
+                }, 5000);
+            }
+        }
+    }
+
+    // 行番号によるレコード削除処理
+    async function deleteRecord(rowNum) {
+        showStatusMessage('データを削除中...', '#fff');
+        setButtonsDisabled(true);
+
+        const formData = new URLSearchParams();
+        formData.append('action', 'delete');
+        formData.append('rowNum', rowNum);
+
+        try {
+            const response = await fetch(GAS_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                showStatusMessage('✅ データを削除しました。', '#4cd964');
+                await fetchRecords();
+            } else {
+                throw new Error(result.message || '削除失敗');
+            }
+        } catch (error) {
+            console.error('Delete Error:', error);
+            showStatusMessage('❌ 削除に失敗しました。', '#ef4444');
+        } finally {
+            setButtonsDisabled(false);
+            setTimeout(() => { statusMessage.textContent = ''; }, 3000);
+        }
+    }
+
+    // ボタンの非活性制御
+    function setButtonsDisabled(disabled) {
+        btnIn.disabled = disabled;
+        btnOut.disabled = disabled;
+        btnConfirm.disabled = disabled;
+        btnCancel.disabled = disabled;
+        btnHolidayMode.disabled = disabled;
+    }
+
+    // ステータスメッセージの表示
+    function showStatusMessage(text, color) {
+        statusMessage.textContent = text;
+        statusMessage.style.color = color;
+    }
+
+    // 6. モーダル画面の処理
+    let selectedModalDate = '';
+
+    function openEditModal(dateStr, dayRecords) {
+        selectedModalDate = dateStr;
+        modalDateTitle.textContent = `${dateStr.replace(/-/g, '/')} の打刻情報`;
+        
+        // フォームリセット (追加モード)
+        resetModalForm();
+
+        // 打刻リストの構築
+        modalRecordsList.innerHTML = '';
+        if (dayRecords.length === 0) {
+            modalRecordsList.innerHTML = '<p style="color:#666; font-style:italic; text-align:center;">打刻データはありません。</p>';
+        } else {
+            dayRecords.forEach(record => {
+                const item = document.createElement('div');
+                item.classList.add('modal-record-item');
+
+                const timeStr = record.status === '休日' ? '終日' : formatTime(record.datetime);
+                item.innerHTML = `
+                    <div class="record-info">
+                        ${record.name} - <span style="color: ${record.status === '出勤' ? '#0284c7' : record.status === '退勤' ? '#dc2626' : '#64748b'}">${record.status}</span> (${timeStr})
+                    </div>
+                    <div class="record-actions">
+                        <button class="record-btn edit" data-rownum="${record.rowNum}" data-name="${record.name}" data-status="${record.status}" data-datetime="${record.datetime}">編集</button>
+                        <button class="record-btn delete" data-rownum="${record.rowNum}">削除</button>
+                    </div>
+                `;
+                modalRecordsList.appendChild(item);
+            });
+
+            // 編集・削除ボタンにイベント登録
+            modalRecordsList.querySelectorAll('.record-btn.edit').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const row = e.target.dataset.rownum;
+                    const name = e.target.dataset.name;
+                    const status = e.target.dataset.status;
+                    const datetime = e.target.dataset.datetime;
+                    setupFormForEdit(row, name, status, datetime);
+                });
+            });
+
+            modalRecordsList.querySelectorAll('.record-btn.delete').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const row = e.target.dataset.rownum;
+                    if (confirm('この打刻データを削除してもよろしいですか？')) {
+                        closeModal();
+                        await deleteRecord(row);
+                    }
+                });
+            });
+        }
+
+        editModal.classList.remove('hidden');
+    }
+
+    function closeModal() {
+        editModal.classList.add('hidden');
+    }
+
+    function resetModalForm() {
+        formActionTitle.textContent = '打刻の追加';
+        formUser.value = activeUser;
+        formType.value = '出勤';
+        formTime.value = '09:00';
+        formRowNum.value = '';
+    }
+
+    function setupFormForEdit(rowNum, name, status, datetime) {
+        formActionTitle.textContent = '打刻の編集';
+        formUser.value = name;
+        formType.value = status;
+        formRowNum.value = rowNum;
+        
+        if (status === '休日') {
+            formTime.value = '';
+            formTime.disabled = true;
+        } else {
+            formTime.disabled = false;
+            formTime.value = formatTime(datetime);
+        }
+    }
+
+    // モーダルでのタイプ切り替え時の時間フォーム無効化制御
+    formType.addEventListener('change', (e) => {
+        if (e.target.value === '休日') {
+            formTime.value = '';
+            formTime.disabled = true;
+        } else {
+            formTime.disabled = false;
+            if (!formTime.value) formTime.value = '09:00';
+        }
+    });
+
+    // モーダルからの保存処理
+    async function saveRecordFromModal() {
+        const name = formUser.value;
+        const status = formType.value;
+        const time = formTime.value;
+        const rowNum = formRowNum.value;
+
+        if (status !== '休日' && !time) {
+            alert('時間を指定してください。');
+            return;
+        }
+
+        let datetimeVal = '';
+        if (status === '休日') {
+            datetimeVal = selectedModalDate; // 休日なら日付のみ
+        } else {
+            datetimeVal = `${selectedModalDate}T${time}`; // 日付T時間
+        }
+
+        closeModal();
+
+        // GASへの送信処理
+        if (rowNum) {
+            // 編集（update）
+            showStatusMessage('打刻データを修正中...', '#fff');
+            setButtonsDisabled(true);
+            const formData = new URLSearchParams();
+            formData.append('action', 'update');
+            formData.append('rowNum', rowNum);
+            formData.append('name', name);
+            formData.append('status', status);
+            formData.append('datetime', datetimeVal);
+
+            try {
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                });
+                const result = await response.json();
+                if (result.status === 'success') {
+                    showStatusMessage('✅ 打刻データを修正しました。', '#4cd964');
+                    await fetchRecords();
+                } else {
+                    throw new Error(result.message || '修正失敗');
+                }
+            } catch (error) {
+                console.error('Update Error:', error);
+                showStatusMessage('❌ 修正に失敗しました。', '#ef4444');
+            } finally {
+                setButtonsDisabled(false);
+                setTimeout(() => { statusMessage.textContent = ''; }, 3000);
+            }
+        } else {
+            // 新規追加 (stamp)
+            // 送信時の activeUser を一時変更して送信
+            const prevUser = activeUser;
+            activeUser = name;
+            await sendData(status, datetimeVal, 'stamp');
+            activeUser = prevUser;
+        }
+    }
+
+    // 会社休日の期間一括保存処理
+    async function saveCompanyHolidays() {
+        const startVal = companyHolidayStart.value;
+        const endVal = companyHolidayEnd.value;
+
+        if (!startVal || !endVal) {
+            alert('開始日と終了日を指定してください。');
+            return;
+        }
+
+        const start = new Date(startVal);
+        const end = new Date(endVal);
+
+        if (start > end) {
+            alert('開始日は終了日より前の日付を指定してください。');
+            return;
+        }
+
+        companyHolidayModal.classList.add('hidden');
+        showStatusMessage('会社休日を登録中...', '#fff');
+        setButtonsDisabled(true);
+
+        // 期間内の日付リストを生成
+        const dateList = [];
+        let current = new Date(start);
+        while (current <= end) {
+            dateList.push(formatDateKey(current));
+            current.setDate(current.getDate() + 1);
+        }
+
+        // 順次送信
+        let successCount = 0;
+        const prevUser = activeUser;
+        activeUser = '会社';
+
+        try {
+            for (let i = 0; i < dateList.length; i++) {
+                const dateStr = dateList[i];
+                showStatusMessage(`会社休日を登録中... (${i + 1}/${dateList.length}日)`, '#fff');
+                
+                const formData = new URLSearchParams();
+                formData.append('action', 'stamp');
+                formData.append('name', '会社');
+                formData.append('status', '休日');
+                formData.append('datetime', dateStr);
+
+                const response = await fetch(GAS_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                });
+                const result = await response.json();
+                if (result.status === 'success') {
+                    successCount++;
+                }
+            }
+
+            if (successCount === dateList.length) {
+                showStatusMessage(`✅ 会社休日を登録しました！ (${successCount}日間)`, '#4cd964');
+            } else {
+                showStatusMessage(`⚠️ 一部登録に失敗しました。 (${successCount}/${dateList.length}日完了)`, '#fde047');
+            }
+            await fetchRecords();
+
+        } catch (error) {
+            console.error('Company Holiday Error:', error);
+            showStatusMessage('❌ 会社休日の登録に失敗しました。', '#ef4444');
+        } finally {
+            activeUser = prevUser;
+            setButtonsDisabled(false);
+            setTimeout(() => { statusMessage.textContent = ''; }, 5000);
+        }
+    }
+
+    // 7. オートモード自動打刻ロジック
+    function getOrGenerateAutoTime(name, dateStr) {
+        const key = `autoTime_${name}_${dateStr}`;
+        let saved = localStorage.getItem(key);
+        if (saved) return JSON.parse(saved);
+
+        // 出勤 6:50 +- 5分 -> 6:45 から 6:55
+        const inMin = Math.floor(Math.random() * 11) - 5;
+        const inTimeDate = new Date();
+        inTimeDate.setHours(6, 50 + inMin, 0);
+        const inTimeStr = `${String(inTimeDate.getHours()).padStart(2, '0')}:${String(inTimeDate.getMinutes()).padStart(2, '0')}`;
+
+        // 退勤 17:30 +- 5分 -> 17:25 から 17:35
+        const outMin = Math.floor(Math.random() * 11) - 5;
+        const outTimeDate = new Date();
+        outTimeDate.setHours(17, 30 + outMin, 0);
+        const outTimeStr = `${String(outTimeDate.getHours()).padStart(2, '0')}:${String(outTimeDate.getMinutes()).padStart(2, '0')}`;
+
+        const val = { in: inTimeStr, out: outTimeStr };
+        localStorage.setItem(key, JSON.stringify(val));
+        return val;
+    }
+
+    async function checkAndRunAutoMode() {
+        const now = new Date();
+        const currentHour = now.getHours();
+
+        // 午前7:00前は自動打刻を行わない（深夜0:00から朝7:00までの起動時はスキップ）
+        if (currentHour < 7) return;
+
+        const todayStr = formatDateKey(now);
+        const currentYear = now.getFullYear();
+        const currentMin = now.getMinutes();
+        const currentTimeStr = `${String(currentHour).padStart(2, '0')}:${String(currentMin).padStart(2, '0')}`;
+
+        // 日曜日は除外
+        const dayOfWeek = now.getDay();
+        if (dayOfWeek === 0) return;
+
+        // 日本の祝日は除外
+        const holidays = getJapaneseHolidays(currentYear);
+        if (holidays[todayStr]) return;
+
+        // 会社休日は除外
+        const hasCompanyHoliday = stampRecords.some(r => r.name === '会社' && r.status === '休日' && r.datetime && r.datetime.startsWith(todayStr));
+        if (hasCompanyHoliday) return;
+
+        const users = ['横澤', '鈴木'];
+
+        for (const user of users) {
+            // オートモードがオンになっているか
+            const isAuto = localStorage.getItem(`autoMode_${user}`) === 'true';
+            if (!isAuto) continue;
+
+            // 今日のそのユーザーの打刻状況を取得
+            const dayRecords = stampRecords.filter(r => r.name === user && r.datetime && r.datetime.startsWith(todayStr));
+            
+            // 手動休日が設定されている場合は除外
+            const hasHoliday = dayRecords.some(r => r.status === '休日');
+            if (hasHoliday) continue;
+
+            const hasIn = dayRecords.some(r => r.status === '出勤');
+            const hasOut = dayRecords.some(r => r.status === '退勤');
+
+            // 今日生成されたランダム出退勤時間を取得
+            const autoTime = getOrGenerateAutoTime(user, todayStr);
+
+            // 出勤の自動打刻 (午前7:00以降であれば即時打刻)
+            if (!hasIn) {
+                const doneKey = `autoDone_${user}_${todayStr}_出勤`;
+                if (!localStorage.getItem(doneKey)) {
+                    localStorage.setItem(doneKey, 'true');
+                    // activeUserを切り替えて自動打刻送信
+                    const prevUser = activeUser;
+                    activeUser = user;
+                    await sendData('出勤', `${todayStr}T${autoTime.in}`, 'stamp', null, true);
+                    activeUser = prevUser;
+                }
+            }
+
+            // 退勤の自動打刻 (午前7:00以降であれば即時打刻)
+            if (!hasOut) {
+                const doneKey = `autoDone_${user}_${todayStr}_退勤`;
+                if (!localStorage.getItem(doneKey)) {
+                    localStorage.setItem(doneKey, 'true');
+                    const prevUser = activeUser;
+                    activeUser = user;
+                    await sendData('退勤', `${todayStr}T${autoTime.out}`, 'stamp', null, true);
+                    activeUser = prevUser;
+                }
+            }
+        }
+    }
 });
