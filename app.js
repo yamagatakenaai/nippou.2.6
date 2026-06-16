@@ -74,6 +74,17 @@ document.addEventListener('DOMContentLoaded', () => {
     settingsBtn.addEventListener('click', () => {
       // 現在のGAS_URLを入力欄にセット
       gasUrlInput.value = GAS_URL;
+      
+      // 現在の使用者を設定画面のラジオボタンに反映
+      const currentAuthor = localStorage.getItem('nippou_author');
+      if (currentAuthor) {
+        const authorRadio = document.querySelector(`input[name="settingsAuthor"][value="${currentAuthor}"]`);
+        if (authorRadio) authorRadio.checked = true;
+      } else {
+        const settingsAuthorRadios = document.querySelectorAll('input[name="settingsAuthor"]');
+        settingsAuthorRadios.forEach(r => r.checked = false);
+      }
+      
       settingsModal.style.display = 'flex';
     });
 
@@ -95,8 +106,17 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       
+      // 選択された使用者を取得
+      const selectedAuthorRadio = document.querySelector('input[name="settingsAuthor"]:checked');
+      if (!selectedAuthorRadio) {
+        alert('使用者を選択してください。');
+        return;
+      }
+      const newAuthor = selectedAuthorRadio.value;
+      
       // localStorageに保存し、メモリ内のGAS_URL変数も更新
       localStorage.setItem('gas_url', newUrl);
+      localStorage.setItem('nippou_author', newAuthor);
       GAS_URL = newUrl;
       
       settingsModal.style.display = 'none';
@@ -209,15 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 日付と時刻の初期セット（アプリを開いた現在の時刻）
   const setCurrentDateTime = () => {
-    // 担当者の初期セット
-    const savedAuthor = localStorage.getItem('nippou_author');
-    if (savedAuthor) {
-      const authorRadio = document.querySelector(`input[name="author"][value="${savedAuthor}"]`);
-      if (authorRadio) authorRadio.checked = true;
-    }
-    
     const now = new Date();
-    
     // YYYY-MM-DD
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -236,6 +248,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const resetToInsertMode = () => {
     editRowInput.value = '';
     editActionInput.value = 'insert';
+    const editAuthorInput = document.getElementById('editAuthor');
+    if (editAuthorInput) editAuthorInput.value = '';
     submitBtnText.textContent = '送信する';
     submitIcon.textContent = 'send';
     cancelEditBtn.classList.add('hidden');
@@ -275,12 +289,29 @@ document.addEventListener('DOMContentLoaded', () => {
     const time = formData.get('time');
     const client = formData.get('client');
     const status = formData.get('status');
-    const author = formData.get('author');
+    
+    // 担当者の決定（新規なら設定画面の設定値、訂正なら元の値を維持）
+    let author = '';
+    if (action === 'insert') {
+      author = localStorage.getItem('nippou_author') || '';
+      if (!author) {
+        showMessage('先に右上の設定（歯車）ボタンから、使用者を設定してください。', 'error');
+        // ボタンの状態を元に戻す
+        submitBtn.disabled = false;
+        submitBtnText.style.display = 'block';
+        if(submitIcon) submitIcon.style.display = 'block';
+        submitSpinner.style.display = 'none';
+        return;
+      }
+    } else {
+      author = document.getElementById('editAuthor').value || '';
+      if (!author) {
+        author = localStorage.getItem('nippou_author') || '';
+      }
+    }
+    
     const baseContent = formData.get('content');
 
-    // 担当者をローカルストレージに保存して次回以降自動選択
-    if (author) localStorage.setItem('nippou_author', author);
-    
     // 「担当者」と「状況タグ」を内容の末尾に足す (編集時は2重にならないように処理)
     let finalContent = baseContent.trim();
     
@@ -632,7 +663,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let rawContent = contentVal || '';
     let foundTag = false;
     const radiosStatus = document.querySelectorAll('input[name="status"]');
-    const radiosAuthor = document.querySelectorAll('input[name="author"]');
     
     // 改行などの余分な空白を削除してからタグ判定
     rawContent = rawContent.trim();
@@ -650,15 +680,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // 担当者の抜き出し
     const authors = ['社長', '伸明', '横澤'];
     let foundAuthor = false;
+    let originalAuthor = '';
     if (foundTag) {
       for (const a of authors) {
         if (rawContent.endsWith(a)) {
-          radiosAuthor.forEach(r => { if(r.value === a) r.checked = true; });
+          originalAuthor = a;
           rawContent = rawContent.substring(0, rawContent.length - a.length).trim();
           foundAuthor = true;
           break;
         }
       }
+    }
+    
+    // 隠しフィールドに元の担当者を退避
+    const editAuthorInput = document.getElementById('editAuthor');
+    if (editAuthorInput) {
+      editAuthorInput.value = originalAuthor;
     }
     
     // もしタグが見つからなかったら一度ラジオボタンのチェックを外す
