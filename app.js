@@ -311,6 +311,54 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // --- カード拡大表示機能用ロジック ---
+  const cardModal = document.getElementById('cardModal');
+  const expandedCardContainer = document.getElementById('expandedCardContainer');
+
+  const openCardModal = (cardElement) => {
+    if (!cardModal || !expandedCardContainer) return;
+
+    // カードのクラス（枠線の色など）を引き継ぐ
+    const isProgress = cardElement.classList.contains('border-progress');
+    const isMemo = cardElement.classList.contains('border-memo');
+    let cardThemeClass = '';
+    if (isProgress) cardThemeClass = 'border-progress';
+    else if (isMemo) cardThemeClass = 'border-memo';
+
+    // 閉じる×ボタンHTML
+    const modalCloseBtnHtml = `<button type="button" class="expanded-close-btn" id="closeCardModalBtn"><span class="material-symbols-rounded">close</span></button>`;
+
+    // 拡大表示用カードの構築
+    expandedCardContainer.innerHTML = `<div class="result-card expanded-state ${cardThemeClass}">${cardElement.innerHTML} ${modalCloseBtnHtml}</div>`;
+
+    // モーダルを表示
+    cardModal.style.display = 'flex';
+
+    // ×ボタンのクリックイベント
+    const closeCardModalBtn = document.getElementById('closeCardModalBtn');
+    if (closeCardModalBtn) {
+      closeCardModalBtn.addEventListener('click', closeCardModal);
+    }
+  };
+
+  const closeCardModal = () => {
+    if (cardModal) {
+      cardModal.style.display = 'none';
+    }
+    if (expandedCardContainer) {
+      expandedCardContainer.innerHTML = '';
+    }
+  };
+
+  if (cardModal) {
+    // 背景タップで閉じる
+    cardModal.addEventListener('click', (e) => {
+      if (e.target === cardModal) {
+        closeCardModal();
+      }
+    });
+  }
+
   // --- PINコード認証機能 ---
   const CORRECT_PIN = '8005';
   let enteredPin = '';
@@ -773,8 +821,11 @@ document.addEventListener('DOMContentLoaded', () => {
     searchResultsEl.innerHTML = html;
   }
   
-  // 訂正・完了ボタンのクリックイベント（イベントデリゲーション）
+  // 訂正・完了ボタンのクリックイベント ＆ カード拡大表示（イベントデリゲーション）
   searchResultsEl.addEventListener('click', async (e) => {
+    // 一括変更モード中は拡大表示や個別ボタン処理は無効化する
+    if (typeof bulkEditMode !== 'undefined' && bulkEditMode) return;
+
     // --- 完了ボタン処理 ---
     const doneBtn = e.target.closest('.done-btn');
     if (doneBtn) {
@@ -835,15 +886,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- 訂正ボタン処理 ---
     const btn = e.target.closest('.edit-btn');
-    if (!btn) return;
-    
-    const rowId = btn.getAttribute('data-row');
-    const dateVal = btn.getAttribute('data-date');
-    const timeVal = btn.getAttribute('data-time');
-    const clientVal = btn.getAttribute('data-client');
-    const contentVal = btn.getAttribute('data-content');
-    
-    startEditing(rowId, dateVal, timeVal, clientVal, contentVal);
+    if (btn) {
+      const rowId = btn.getAttribute('data-row');
+      const dateVal = btn.getAttribute('data-date');
+      const timeVal = btn.getAttribute('data-time');
+      const clientVal = btn.getAttribute('data-client');
+      const contentVal = btn.getAttribute('data-content');
+      
+      startEditing(rowId, dateVal, timeVal, clientVal, contentVal);
+      return;
+    }
+
+    // --- カード本体のタップ（拡大ポップアップ表示） ---
+    const card = e.target.closest('.result-card');
+    if (card) {
+      openCardModal(card);
+    }
   });
 
   // 編集開始用関数
