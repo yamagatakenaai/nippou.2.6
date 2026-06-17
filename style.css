@@ -854,13 +854,20 @@ button {
 
 /* 拡大表示時のカードスタイル */
 .expanded-state {
+  position: relative !important; /* 絶対配置の閉じるボタンの基準点とする */
   cursor: default; /* 拡大中はクリックしても何も起きない */
-  padding: 2rem 1.5rem 1.75rem 1.5rem !important; /* 内側余白を多めに */
+  padding: 2.5rem 1.25rem 1.25rem 1.25rem !important; /* 内側余白を調整。閉じるボタンと文字が重なりにくくするため、上部の余白を確保 */
   background: var(--glass-bg) !important;
   border: 2px solid var(--primary) !important;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3) !important;
   border-radius: 1.25rem !important;
   animation: modalScaleUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  
+  /* スマホ画面内に収めるための高さ制限とFlexレイアウト化 */
+  max-height: 85vh !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box !important;
 }
 
 @keyframes modalScaleUp {
@@ -882,6 +889,11 @@ button {
   line-height: 1.7 !important;
   padding: 1rem !important;
   border-radius: 0.75rem !important;
+  
+  /* 長文時のスクロール対応 */
+  overflow-y: auto !important;
+  flex-grow: 1 !important;
+  flex-shrink: 1 !important;
 }
 
 /* 拡大中カード内の「完了」「訂正」ボタン、一括変更チェックボックスは非表示にする */
