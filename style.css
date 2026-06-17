@@ -349,6 +349,7 @@ textarea {
   opacity: 0.8;
 }
 .tag-done { color: #10b981; } /* Emerald */
+.tag-memo { color: #eab308; } /* Yellow 500 */
 .tag-progress { color: #f59e0b; } /* Amber */
 
 /* --- ボタン --- */
@@ -533,6 +534,10 @@ button {
 
 .border-progress {
   border: 2px solid #ef4444 !important; /* Red 500 */
+}
+
+.border-memo {
+  border: 2px solid #eab308 !important; /* Yellow 500 */
 }
 
 .done-btn {
@@ -791,5 +796,49 @@ button {
   .theme-toggle .material-symbols-rounded {
     font-size: 1.25rem;
   }
+}
+
+/* --- 状況一括変更機能用スタイル --- */
+.bulk-check-wrapper {
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.bulk-checkbox {
+  width: 1.35rem;
+  height: 1.35rem;
+  cursor: pointer;
+  accent-color: var(--primary);
+  border: 2px solid var(--input-border);
+  border-radius: 0.35rem;
+  background-color: var(--input-bg);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.bulk-checkbox:checked {
+  transform: scale(1.1);
+}
+
+/* 一括変更モード有効時 */
+.bulk-mode-active .bulk-check-wrapper {
+  display: flex !important;
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* 一括変更モード時、カードのサイズや配置の微調整 */
+.bulk-mode-active .result-card {
+  border-style: dashed; /* 一括選択中であることを分かりやすく破線にする */
+}
+
+.bulk-mode-active .result-card.bulk-selected {
+  border-style: solid;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.15);
+  background-color: var(--primary-light);
+}
+
+.dark-theme .bulk-mode-active .result-card.bulk-selected {
+  background-color: rgba(129, 140, 248, 0.15);
 }
 

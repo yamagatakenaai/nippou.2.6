@@ -9,6 +9,14 @@ document.addEventListener('DOMContentLoaded', () => {
       .catch(err => console.log('Service Worker Registration Failed', err));
   }
 
+  // --- 検索関連要素の先行定義（一括変更機能やPIN認証から安全に参照するため） ---
+  const searchForm = document.getElementById('searchForm');
+  const searchInput = document.getElementById('searchInput');
+  const searchBtn = document.getElementById('searchBtn');
+  const searchBtnText = searchBtn ? searchBtn.querySelector('.btn-text') : null;
+  const searchSpinner = searchBtn ? searchBtn.querySelector('.search-spinner') : null;
+  const searchResultsEl = document.getElementById('searchResults');
+
   // --- テーマ（ダークモード）設定機能 ---
   const themeToggle = document.getElementById('themeToggle');
   const themeIcon = document.getElementById('themeIcon');
@@ -127,6 +135,178 @@ document.addEventListener('DOMContentLoaded', () => {
     settingsModal.addEventListener('click', (e) => {
       if (e.target === settingsModal) {
         settingsModal.style.display = 'none';
+      }
+    });
+  }
+
+  // --- 状況一括変更機能 ---
+  const bulkEditBtn = document.getElementById('bulkEditBtn');
+  const cancelBulkBtn = document.getElementById('cancelBulkBtn');
+  const bulkModal = document.getElementById('bulkModal');
+  const closeBulkModalBtn = document.getElementById('closeBulkModalBtn');
+  const bulkCheckedCount = document.getElementById('bulkCheckedCount');
+  
+  let bulkEditMode = false;
+
+  const exitBulkEditMode = () => {
+    bulkEditMode = false;
+    searchResultsEl.classList.remove('bulk-mode-active');
+    cancelBulkBtn.classList.add('hidden');
+    
+    const btnIcon = document.getElementById('bulkEditBtnIcon');
+    const btnText = document.getElementById('bulkEditBtnText');
+    if (btnIcon) btnIcon.textContent = 'rule';
+    if (btnText) btnText.textContent = '一括変更';
+    
+    // 全チェックボックスをクリアしてスタイルをリセット
+    const checkBoxes = document.querySelectorAll('.bulk-checkbox');
+    checkBoxes.forEach(cb => {
+      cb.checked = false;
+      const card = cb.closest('.result-card');
+      if (card) card.classList.remove('bulk-selected');
+    });
+  };
+
+  const updateBulkEditBtnState = () => {
+    const checkedBoxes = document.querySelectorAll('.bulk-checkbox:checked');
+    const btnText = document.getElementById('bulkEditBtnText');
+    const btnIcon = document.getElementById('bulkEditBtnIcon');
+    
+    if (checkedBoxes.length > 0) {
+      if (btnText) btnText.textContent = '更新する';
+      if (btnIcon) btnIcon.textContent = 'done_all';
+    } else {
+      if (btnText) btnText.textContent = '一括変更';
+      if (btnIcon) btnIcon.textContent = 'rule';
+    }
+  };
+
+  if (bulkEditBtn && cancelBulkBtn && bulkModal && closeBulkModalBtn) {
+    // 一括変更 / 更新する ボタンクリック
+    bulkEditBtn.addEventListener('click', () => {
+      if (!bulkEditMode) {
+        // モードをONにする
+        bulkEditMode = true;
+        searchResultsEl.classList.add('bulk-mode-active');
+        cancelBulkBtn.classList.remove('hidden');
+        updateBulkEditBtnState();
+      } else {
+        // すでにONの場合、チェックされた数を調べる
+        const checkedBoxes = document.querySelectorAll('.bulk-checkbox:checked');
+        if (checkedBoxes.length === 0) {
+          // チェックがなければモードOFFにする
+          exitBulkEditMode();
+        } else {
+          // チェックがあれば一括変更モーダルを開く
+          if (!GAS_URL) {
+            showMessage('先に右上の設定（歯車）ボタンから、GASのURLを設定してください。', 'error');
+            return;
+          }
+          if (bulkCheckedCount) {
+            bulkCheckedCount.textContent = checkedBoxes.length;
+          }
+          bulkModal.style.display = 'flex';
+        }
+      }
+    });
+
+    // キャンセルボタン
+    cancelBulkBtn.addEventListener('click', exitBulkEditMode);
+
+    // モーダル閉じる
+    closeBulkModalBtn.addEventListener('click', () => {
+      bulkModal.style.display = 'none';
+    });
+    bulkModal.addEventListener('click', (e) => {
+      if (e.target === bulkModal) {
+        bulkModal.style.display = 'none';
+      }
+    });
+
+    // モーダル内の状況選択オプションクリック
+    const bulkStatusOpts = document.querySelectorAll('.bulk-status-opt');
+    bulkStatusOpts.forEach(opt => {
+      opt.addEventListener('click', async () => {
+        const newStatus = opt.getAttribute('data-status');
+        const checkedBoxes = document.querySelectorAll('.bulk-checkbox:checked');
+        if (checkedBoxes.length === 0) return;
+
+        if (!confirm(`${checkedBoxes.length}件の日報の状況を一括で変更しますか？`)) {
+          return;
+        }
+
+        bulkModal.style.display = 'none';
+        
+        // ローディング
+        showMessage('状況を一括変更中...', 'success');
+        
+        // 送信データの配列作成
+        const promises = Array.from(checkedBoxes).map(cb => {
+          const rowId = cb.getAttribute('data-row');
+          const dateVal = cb.getAttribute('data-date');
+          const timeVal = cb.getAttribute('data-time');
+          const clientVal = cb.getAttribute('data-client') || '';
+          const originalContent = cb.getAttribute('data-content') || '';
+
+          // contentの末尾のタグ（[!] / [#] / [$]）を新しいタグに書き換える
+          let newContent = originalContent.trim();
+          if (newContent.endsWith('[!]') || newContent.endsWith('[#]') || newContent.endsWith('[$]')) {
+            newContent = newContent.substring(0, newContent.length - 3) + newStatus;
+          } else {
+            newContent = newContent + ' ' + newStatus;
+          }
+
+          const urlEncodedData = new URLSearchParams();
+          urlEncodedData.append('action', 'update');
+          urlEncodedData.append('row', rowId);
+          urlEncodedData.append('date', dateVal);
+          urlEncodedData.append('time', timeVal);
+          urlEncodedData.append('client', clientVal);
+          urlEncodedData.append('content', newContent);
+
+          return fetch(GAS_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: urlEncodedData.toString()
+          }).then(res => {
+            if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+            return res.json();
+          });
+        });
+
+        try {
+          const results = await Promise.all(promises);
+          const failedCount = results.filter(r => r.status !== 'success').length;
+          
+          if (failedCount === 0) {
+            showMessage('状況の一括変更が完了しました！', 'success');
+          } else {
+            showMessage(`一部の更新に失敗しました (${failedCount}件の失敗)`, 'error');
+          }
+          
+          exitBulkEditMode();
+          // 自動で現在の検索ワードで再検索して画面を更新
+          searchForm.dispatchEvent(new Event('submit'));
+        } catch (err) {
+          console.error(err);
+          showMessage('一括更新の送信中にエラーが発生しました。', 'error');
+        }
+      });
+    });
+
+    // 検索結果一覧内でのチェックボックスやカードクリック制御（イベントデリゲーション）
+    searchResultsEl.addEventListener('change', (e) => {
+      const cb = e.target.closest('.bulk-checkbox');
+      if (cb) {
+        const card = cb.closest('.result-card');
+        if (card) {
+          if (cb.checked) {
+            card.classList.add('bulk-selected');
+          } else {
+            card.classList.remove('bulk-selected');
+          }
+        }
+        updateBulkEditBtnState();
       }
     });
   }
@@ -393,12 +573,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- 検索機能 ---
-  const searchForm = document.getElementById('searchForm');
-  const searchInput = document.getElementById('searchInput');
-  const searchBtn = document.getElementById('searchBtn');
-  const searchBtnText = searchBtn.querySelector('.btn-text');
-  const searchSpinner = searchBtn.querySelector('.search-spinner');
-  const searchResultsEl = document.getElementById('searchResults');
   
   const searchProgressBtn = document.getElementById('searchProgressBtn');
   const searchTodayBtn = document.getElementById('searchTodayBtn');
@@ -409,6 +583,16 @@ document.addEventListener('DOMContentLoaded', () => {
   if (searchProgressBtn) {
     searchProgressBtn.addEventListener('click', () => {
       searchInput.value = '[#]';
+      // 自動で検索を実行
+      searchForm.dispatchEvent(new Event('submit'));
+    });
+  }
+
+  // メモ検索ボタンのイベント
+  const searchMemoBtn = document.getElementById('searchMemoBtn');
+  if (searchMemoBtn) {
+    searchMemoBtn.addEventListener('click', () => {
+      searchInput.value = '[$]';
       // 自動で検索を実行
       searchForm.dispatchEvent(new Event('submit'));
     });
@@ -482,6 +666,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     
+    // 検索実行時に一括変更モードを強制解除
+    if (typeof exitBulkEditMode === 'function') {
+      exitBulkEditMode();
+    }
+    
     let keyword = searchInput.value.trim();
     if (!keyword) return;
 
@@ -538,18 +727,36 @@ document.addEventListener('DOMContentLoaded', () => {
           .replace(/\r/g, '&#13;');
       };
       
-      // 継続中タグの判定
+      // 継続中およびメモタグの判定
       const hasProgressTag = (result.content || '').includes('[#]');
-      const cardClass = hasProgressTag ? 'result-card border-progress fade-in' : 'result-card fade-in';
+      const hasMemoTag = (result.content || '').includes('[$]');
+      
+      let cardClass = 'result-card fade-in';
+      if (hasProgressTag) {
+        cardClass = 'result-card border-progress fade-in';
+      } else if (hasMemoTag) {
+        cardClass = 'result-card border-memo fade-in';
+      }
       
       return `
-        <div class="${cardClass}" style="animation-delay: ${animDelay}s">
-          <div class="result-header">
-            <div class="result-datetime">
-              <span class="material-symbols-rounded icon-xs">calendar_clock</span>
-              <span>${dateStr} ${timeStr}</span>
+        <div class="${cardClass}" style="animation-delay: ${animDelay}s" data-card-row="${rowId}">
+          <div class="result-header" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <!-- 一括変更用チェックボックス -->
+              <div class="bulk-check-wrapper">
+                <input type="checkbox" class="bulk-checkbox" 
+                       data-row="${rowId}" 
+                       data-date="${escapeHtmlAttr(result.date)}" 
+                       data-time="${escapeHtmlAttr(result.time)}" 
+                       data-client="${escapeHtmlAttr(result.client)}" 
+                       data-content="${escapeHtmlAttr(result.content)}">
+              </div>
+              <div class="result-datetime" style="display: flex; align-items: center; gap: 0.25rem;">
+                <span class="material-symbols-rounded icon-xs">calendar_clock</span>
+                <span>${dateStr} ${timeStr}</span>
+              </div>
             </div>
-            <div style="display: flex; gap: 0.5rem;">
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
               ${rowId && hasProgressTag ? `<button type="button" class="done-btn" data-row="${rowId}" data-date="${escapeHtmlAttr(result.date)}" data-time="${escapeHtmlAttr(result.time)}" data-client="${escapeHtmlAttr(result.client)}" data-content="${escapeHtmlAttr(result.content)}"><span class="material-symbols-rounded icon-xs">check_circle</span>完了</button>` : ''}
               ${rowId ? `<button type="button" class="edit-btn" data-row="${rowId}" data-date="${escapeHtmlAttr(result.date)}" data-time="${escapeHtmlAttr(result.time)}" data-client="${escapeHtmlAttr(result.client)}" data-content="${escapeHtmlAttr(result.content)}"><span class="material-symbols-rounded icon-xs">edit</span>訂正</button>` : ''}
             </div>
@@ -673,6 +880,10 @@ document.addEventListener('DOMContentLoaded', () => {
       foundTag = true;
     } else if (rawContent.endsWith('[#]')) {
       radiosStatus.forEach(r => { if(r.value === '[#]') r.checked = true; });
+      rawContent = rawContent.substring(0, rawContent.length - 3).trim();
+      foundTag = true;
+    } else if (rawContent.endsWith('[$]')) {
+      radiosStatus.forEach(r => { if(r.value === '[$]') r.checked = true; });
       rawContent = rawContent.substring(0, rawContent.length - 3).trim();
       foundTag = true;
     }
