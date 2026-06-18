@@ -1,8 +1,8 @@
-const CACHE_NAME = 'nippou-pwa-v1.8.1';
+const CACHE_NAME = 'nippou-pwa-v1.9';
 const urlsToCache = [
   './index.html',
-  './style.css?v=1.8.1',
-  './app.js?v=1.8.1',
+  './style.css?v=1.9',
+  './app.js?v=1.9',
   './manifest.json',
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap'
 ];

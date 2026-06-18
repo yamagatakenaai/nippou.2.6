@@ -935,3 +935,62 @@ button {
   background: rgba(255, 255, 255, 0.18);
 }
 
+/* --- カレンダー用のスタイル (v1.9) --- */
+.calendar-day-cell {
+  background-color: var(--input-bg);
+  min-height: 70px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  position: relative;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.calendar-day-cell:active {
+  transform: scale(0.96);
+}
+
+.calendar-day-cell:hover {
+  background-color: var(--primary-light);
+}
+
+.dark-theme .calendar-day-cell:hover {
+  background-color: rgba(129, 140, 248, 0.15);
+}
+
+.calendar-bar-red {
+  background-color: #ef4444;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 2px;
+  line-height: 1.2;
+  padding: 1px 0;
+  width: 100%;
+}
+
+.calendar-bar-yellow {
+  background-color: #eab308;
+  color: black;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 2px;
+  line-height: 1.2;
+  padding: 1px 0;
+  width: 100%;
+}
+
+.calendar-bar-green {
+  background-color: #10b981;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 2px;
+  line-height: 1.2;
+  padding: 1px 0;
+  width: 100%;
+}
+

@@ -17,6 +17,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchSpinner = searchBtn ? searchBtn.querySelector('.search-spinner') : null;
   const searchResultsEl = document.getElementById('searchResults');
 
+  // --- カレンダー関連要素 (v1.9) ---
+  const calendarViewBtn = document.getElementById('calendarViewBtn');
+  const calendarViewBtnIcon = document.getElementById('calendarViewBtnIcon');
+  const calendarViewBtnText = document.getElementById('calendarViewBtnText');
+  const calendarContainer = document.getElementById('calendarContainer');
+  const prevMonthBtn = document.getElementById('prevMonthBtn');
+  const nextMonthBtn = document.getElementById('nextMonthBtn');
+  const calendarMonthTitle = document.getElementById('calendarMonthTitle');
+  const calendarGrid = document.getElementById('calendarGrid');
+  const backToCalendarBtn = document.getElementById('backToCalendarBtn');
+  const searchHelpers = document.querySelector('.search-helpers');
+
+  // --- カレンダー状態管理変数 (v1.9) ---
+  let allNippouData = null;
+  let isCalendarMode = false;
+  let calendarCurrentYear = new Date().getFullYear();
+  let calendarCurrentMonth = new Date().getMonth(); // 0-11
+
   // --- テーマ（ダークモード）設定機能 ---
   const themeToggle = document.getElementById('themeToggle');
   const themeIcon = document.getElementById('themeIcon');
@@ -184,6 +202,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (bulkEditBtn && cancelBulkBtn && bulkModal && closeBulkModalBtn) {
     // 一括変更 / 更新する ボタンクリック
     bulkEditBtn.addEventListener('click', () => {
+      // カレンダーモード中なら強制解除する (v1.9)
+      if (isCalendarMode) {
+        toggleCalendarMode(false);
+      }
+
       if (!bulkEditMode) {
         // モードをONにする
         bulkEditMode = true;
@@ -284,6 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showMessage(`一部の更新に失敗しました (${failedCount}件の失敗)`, 'error');
           }
           
+          allNippouData = null; // キャッシュクリア (v1.9)
           exitBulkEditMode();
           // 自動で現在の検索ワードで再検索して画面を更新
           searchForm.dispatchEvent(new Event('submit'));
@@ -585,6 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (result.status === 'success') {
         showMessage(action === 'update' ? '日報を訂正（上書き）しました！' : '日報を送信しました！', 'success');
+        allNippouData = null; // キャッシュクリア (v1.9)
         resetToInsertMode();
         
         // もし検索中なら自動で再検索する
@@ -870,6 +895,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (result.status === 'success') {
           showMessage('日報を完了状態に変更しました！', 'success');
+          allNippouData = null; // キャッシュクリア (v1.9)
           // 自動で現在の検索ワードで再検索して画面を更新
           searchForm.dispatchEvent(new Event('submit'));
         } else {
@@ -983,4 +1009,294 @@ document.addEventListener('DOMContentLoaded', () => {
     form.style.transform = 'scale(1.02)';
     setTimeout(()=> { form.style.transform = 'scale(1)'; }, 200);
   };
+
+  // --- カレンダー機能ロジック (v1.9) ---
+
+  // 全日報データを取得 (キャッシュ対応)
+  async function loadAllNippouData(force = false) {
+    if (allNippouData && !force) return allNippouData;
+    
+    showCalendarLoading(true);
+    
+    try {
+      const response = await fetch(`${GAS_URL}?keyword=${encodeURIComponent('/')}`);
+      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+      const data = await response.json();
+      if (data.status === 'success') {
+        allNippouData = data.results || [];
+        return allNippouData;
+      } else {
+        throw new Error(data.message || 'データ取得に失敗しました');
+      }
+    } catch (error) {
+      console.error('Fetch all error:', error);
+      showMessage('カレンダー用データの取得に失敗しました。', 'error');
+      return [];
+    } finally {
+      showCalendarLoading(false);
+    }
+  }
+
+  // ローディング表示
+  function showCalendarLoading(show) {
+    if (!calendarGrid) return;
+    if (show) {
+      calendarGrid.innerHTML = `
+        <div style="grid-column: span 7; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; color: var(--text-muted); gap: 0.5rem; background: var(--input-bg);">
+          <div class="spinner" style="width: 2rem; height: 2rem; color: var(--primary);"></div>
+          <span style="font-size: 0.9rem; font-weight: 600;">日報データを読み込み中...</span>
+        </div>
+      `;
+    }
+  }
+
+  // カレンダー描画
+  function renderCalendar(year, month, nippouList) {
+    if (!calendarGrid || !calendarMonthTitle) return;
+
+    calendarGrid.innerHTML = '';
+    calendarMonthTitle.textContent = `${year}年${month + 1}月`;
+
+    // 最初の日の曜日 (0:日, 1:月, ... 6:土)
+    const firstDay = new Date(year, month, 1);
+    let startDayOfWeek = firstDay.getDay();
+    // 月曜始まりのオフセット計算
+    let offset = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
+
+    // 当月と前月の日数
+    const totalDays = new Date(year, month + 1, 0).getDate();
+    const prevMonthTotalDays = new Date(year, month, 0).getDate();
+
+    // 前月の日付埋め
+    for (let i = offset - 1; i >= 0; i--) {
+      const day = prevMonthTotalDays - i;
+      const cell = createCalendarCell(year, month - 1, day, false, null);
+      calendarGrid.appendChild(cell);
+    }
+
+    // 当月の日付
+    for (let day = 1; day <= totalDays; day++) {
+      const dateStr = `${year}/${String(month + 1).padStart(2, '0')}/${String(day).padStart(2, '0')}`;
+      const dateStrShort = `${year}/${month + 1}/${day}`;
+      
+      const dayNippous = nippouList.filter(n => {
+        const formatted = formatDateString(n.date);
+        return formatted === dateStr || formatted === dateStrShort;
+      });
+
+      const cell = createCalendarCell(year, month, day, true, dayNippous);
+      calendarGrid.appendChild(cell);
+    }
+
+    // 翌月の日付埋め
+    const currentTotalCells = offset + totalDays;
+    const nextMonthCells = (7 - (currentTotalCells % 7)) % 7;
+    for (let day = 1; day <= nextMonthCells; day++) {
+      const cell = createCalendarCell(year, month + 1, day, false, null);
+      calendarGrid.appendChild(cell);
+    }
+  }
+
+  // カレンダーセル作成
+  function createCalendarCell(year, month, day, isCurrentMonth, dayNippous) {
+    const cell = document.createElement('div');
+    cell.className = 'calendar-day-cell';
+    
+    // 日曜日の場合は背景色やテキスト色で分かりやすく
+    const cellDate = new Date(year, month, day);
+    const dow = cellDate.getDay(); // 0:日, 6:土
+
+    if (!isCurrentMonth) {
+      cell.style.opacity = '0.3';
+      cell.style.cursor = 'default';
+    } else {
+      cell.addEventListener('click', () => {
+        showDayNippouList(year, month, day, dayNippous);
+      });
+    }
+
+    // 日付テキスト
+    const dayNum = document.createElement('span');
+    dayNum.textContent = day;
+    dayNum.style.fontSize = '0.75rem';
+    dayNum.style.fontWeight = '700';
+    dayNum.style.color = 'var(--text-main)';
+    dayNum.style.marginBottom = '4px';
+
+    if (isCurrentMonth) {
+      if (dow === 0) dayNum.style.color = '#ef4444'; // 日曜
+      else if (dow === 6) dayNum.style.color = '#3b82f6'; // 土曜
+      
+      // 今日の日付をハイライト
+      const today = new Date();
+      if (today.getFullYear() === year && today.getMonth() === month && today.getDate() === day) {
+        dayNum.style.background = 'var(--primary)';
+        dayNum.style.color = 'white';
+        dayNum.style.borderRadius = '50%';
+        dayNum.style.width = '1.2rem';
+        dayNum.style.height = '1.2rem';
+        dayNum.style.display = 'flex';
+        dayNum.style.alignItems = 'center';
+        dayNum.style.justifyContent = 'center';
+      }
+    }
+    
+    cell.appendChild(dayNum);
+
+    // 日報データの件数バー表示
+    if (isCurrentMonth && dayNippous && dayNippous.length > 0) {
+      let progressCount = 0; // [#] 継続中
+      let memoCount = 0;     // [$] メモ
+      let doneCount = 0;     // [!] 完了
+
+      dayNippous.forEach(n => {
+        const content = n.content || '';
+        if (content.includes('[#]')) progressCount++;
+        else if (content.includes('[$]')) memoCount++;
+        else if (content.includes('[!]')) doneCount++;
+      });
+
+      const barContainer = document.createElement('div');
+      barContainer.style.display = 'flex';
+      barContainer.style.flexDirection = 'column';
+      barContainer.style.gap = '2px';
+      barContainer.style.width = '100%';
+      barContainer.style.marginTop = 'auto'; // 下部に配置
+
+      // 継続中 (赤)
+      if (progressCount > 0) {
+        const bar = document.createElement('div');
+        bar.className = 'calendar-bar-red';
+        bar.textContent = progressCount;
+        barContainer.appendChild(bar);
+      }
+      // メモ (黄)
+      if (memoCount > 0) {
+        const bar = document.createElement('div');
+        bar.className = 'calendar-bar-yellow';
+        bar.textContent = memoCount;
+        barContainer.appendChild(bar);
+      }
+      // 完了 (緑)
+      if (doneCount > 0) {
+        const bar = document.createElement('div');
+        bar.className = 'calendar-bar-green';
+        bar.textContent = doneCount;
+        barContainer.appendChild(bar);
+      }
+
+      cell.appendChild(barContainer);
+    }
+
+    return cell;
+  }
+
+  // 日報セルタップ時の日別一覧への遷移
+  function showDayNippouList(year, month, day, dayNippous) {
+    if (!searchResultsEl || !calendarContainer || !backToCalendarBtn) return;
+
+    calendarContainer.classList.add('hidden');
+    backToCalendarBtn.classList.remove('hidden');
+
+    // 検索入力にその日付をセット（検索動作と整合させる）
+    const dateStr = `${year}/${String(month + 1).padStart(2, '0')}/${String(day).padStart(2, '0')}`;
+    if (searchInput) {
+      searchInput.value = dateStr;
+    }
+
+    // 検索フォーム等は非表示にする
+    if (searchForm) searchForm.classList.add('hidden');
+    if (searchHelpers) searchHelpers.style.display = 'none';
+
+    // 一覧を描画
+    renderSearchResults(dayNippous);
+    
+    // スムーズスクロール
+    searchResultsEl.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  // カレンダー画面に戻る
+  function backToCalendar() {
+    if (calendarContainer) calendarContainer.classList.remove('hidden');
+    if (backToCalendarBtn) backToCalendarBtn.classList.add('hidden');
+    if (searchForm) searchForm.classList.remove('hidden');
+    if (searchHelpers) searchHelpers.style.display = 'flex';
+    if (searchResultsEl) searchResultsEl.innerHTML = '';
+  }
+
+  // カレンダーモードのトグル
+  function toggleCalendarMode(forceState) {
+    if (typeof forceState === 'boolean') {
+      isCalendarMode = forceState;
+    } else {
+      isCalendarMode = !isCalendarMode;
+    }
+
+    if (!calendarViewBtn) return;
+
+    if (isCalendarMode) {
+      calendarViewBtnText.textContent = '検索表示';
+      if (calendarViewBtnIcon) calendarViewBtnIcon.textContent = 'search';
+
+      if (searchForm) searchForm.classList.add('hidden');
+      if (searchHelpers) searchHelpers.style.display = 'none';
+      if (searchResultsEl) searchResultsEl.innerHTML = '';
+      if (backToCalendarBtn) backToCalendarBtn.classList.add('hidden');
+      if (calendarContainer) calendarContainer.classList.remove('hidden');
+
+      if (GAS_URL) {
+        loadAllNippouData().then(nippous => {
+          renderCalendar(calendarCurrentYear, calendarCurrentMonth, nippous);
+        });
+      } else {
+        showMessage('先に右上の設定（歯車）ボタンから、GASのURLを設定してください。', 'error');
+        isCalendarMode = false;
+        toggleCalendarMode(false);
+      }
+    } else {
+      calendarViewBtnText.textContent = 'カレンダー表示';
+      if (calendarViewBtnIcon) calendarViewBtnIcon.textContent = 'calendar_month';
+
+      if (searchForm) searchForm.classList.remove('hidden');
+      if (searchHelpers) searchHelpers.style.display = 'flex';
+      if (searchResultsEl) searchResultsEl.innerHTML = '';
+      if (backToCalendarBtn) backToCalendarBtn.classList.add('hidden');
+      if (calendarContainer) calendarContainer.classList.add('hidden');
+    }
+  }
+
+  // イベントリスナーの登録
+  if (calendarViewBtn) {
+    calendarViewBtn.addEventListener('click', () => toggleCalendarMode());
+  }
+
+  if (backToCalendarBtn) {
+    backToCalendarBtn.addEventListener('click', backToCalendar);
+  }
+
+  if (prevMonthBtn) {
+    prevMonthBtn.addEventListener('click', () => {
+      calendarCurrentMonth--;
+      if (calendarCurrentMonth < 0) {
+        calendarCurrentMonth = 11;
+        calendarCurrentYear--;
+      }
+      loadAllNippouData().then(nippous => {
+        renderCalendar(calendarCurrentYear, calendarCurrentMonth, nippous);
+      });
+    });
+  }
+
+  if (nextMonthBtn) {
+    nextMonthBtn.addEventListener('click', () => {
+      calendarCurrentMonth++;
+      if (calendarCurrentMonth > 11) {
+        calendarCurrentMonth = 0;
+        calendarCurrentYear++;
+      }
+      loadAllNippouData().then(nippous => {
+        renderCalendar(calendarCurrentYear, calendarCurrentMonth, nippous);
+      });
+    });
+  }
 });
