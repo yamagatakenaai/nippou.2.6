@@ -1013,6 +1013,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- カレンダー機能ロジック (v1.9) ---
 
+  // 日報がカレンダーの日付（登録日、または本文内の日付テキスト）と一致するか判定 (v1.9.2)
+  function isNippouMatchingDate(nippou, year, month, day) {
+    // 1. 登録日が一致するか？
+    const regDate = formatDateString(nippou.date); // "YYYY/MM/DD"
+    const targetDateLong = `${year}/${String(month + 1).padStart(2, '0')}/${String(day).padStart(2, '0')}`;
+    const targetDateShort = `${year}/${month + 1}/${day}`;
+    if (regDate === targetDateLong || regDate === targetDateShort) {
+      return true;
+    }
+
+    // 2. 本文にその日付が含まれているか？
+    const content = nippou.content || '';
+    if (!content) return false;
+
+    const mLong = String(month + 1).padStart(2, '0');
+    const mShort = String(month + 1);
+    const dLong = String(day).padStart(2, '0');
+    const dShort = String(day);
+
+    // パターンA: "YYYY/MM/DD" (例: 2026/06/19)
+    const patternA = `${year}/${mLong}/${dLong}`;
+    // パターンB: "YYYY/M/D" (例: 2026/6/19)
+    const patternB = `${year}/${mShort}/${dShort}`;
+
+    if (content.includes(patternA) || content.includes(patternB)) {
+      return true;
+    }
+
+    // パターンC: 前後に数字がない「M/D」または「MM/DD」（例: 6/19 または 06/19）
+    // 誤検知（例: 16/19 や 6/190）を防ぐ
+    function testMonthDayPattern(text, m, d) {
+      const regex = new RegExp(`(?:^|[^\\d])${m}\\/${d}(?:[^\\d]|$)`);
+      return regex.test(text);
+    }
+
+    if (testMonthDayPattern(content, mShort, dShort) || testMonthDayPattern(content, mLong, dLong)) {
+      return true;
+    }
+
+    return false;
+  }
+
   // 全日報データを取得 (キャッシュ対応)
   async function loadAllNippouData(force = false) {
     if (allNippouData && !force) return allNippouData;
@@ -1077,13 +1119,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 当月の日付
     for (let day = 1; day <= totalDays; day++) {
-      const dateStr = `${year}/${String(month + 1).padStart(2, '0')}/${String(day).padStart(2, '0')}`;
-      const dateStrShort = `${year}/${month + 1}/${day}`;
-      
-      const dayNippous = nippouList.filter(n => {
-        const formatted = formatDateString(n.date);
-        return formatted === dateStr || formatted === dateStrShort;
-      });
+      const dayNippous = nippouList.filter(n => isNippouMatchingDate(n, year, month, day));
 
       const cell = createCalendarCell(year, month, day, true, dayNippous);
       calendarGrid.appendChild(cell);
@@ -1168,21 +1204,21 @@ document.addEventListener('DOMContentLoaded', () => {
       if (progressCount > 0) {
         const bar = document.createElement('div');
         bar.className = 'calendar-bar-red';
-        bar.textContent = progressCount;
+        bar.textContent = `継続中 ${progressCount}`;
         barContainer.appendChild(bar);
       }
       // メモ (黄)
       if (memoCount > 0) {
         const bar = document.createElement('div');
         bar.className = 'calendar-bar-yellow';
-        bar.textContent = memoCount;
+        bar.textContent = `メモ ${memoCount}`;
         barContainer.appendChild(bar);
       }
       // 完了 (緑)
       if (doneCount > 0) {
         const bar = document.createElement('div');
         bar.className = 'calendar-bar-green';
-        bar.textContent = doneCount;
+        bar.textContent = `完了 ${doneCount}`;
         barContainer.appendChild(bar);
       }
 
