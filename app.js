@@ -1261,6 +1261,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (searchForm) searchForm.classList.remove('hidden');
     if (searchHelpers) searchHelpers.style.display = 'flex';
     if (searchResultsEl) searchResultsEl.innerHTML = '';
+
+    // キャッシュがクリアされている（データが更新された）場合のみ再読み込み＆再描画 (v1.9.6)
+    if (allNippouData === null) {
+      if (GAS_URL) {
+        loadAllNippouData().then(nippous => {
+          renderCalendar(calendarCurrentYear, calendarCurrentMonth, nippous);
+        });
+      }
+    }
   }
 
   // カレンダーモードのトグル
