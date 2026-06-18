@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const searchBtnText = searchBtn ? searchBtn.querySelector('.btn-text') : null;
   const searchSpinner = searchBtn ? searchBtn.querySelector('.search-spinner') : null;
   const searchResultsEl = document.getElementById('searchResults');
+  const searchSection = document.querySelector('.search-section');
 
   // --- カレンダー関連要素 (v1.9) ---
   const calendarViewBtn = document.getElementById('calendarViewBtn');
@@ -1193,9 +1194,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 日報セルタップ時の日別一覧への遷移
   function showDayNippouList(year, month, day, dayNippous) {
-    if (!searchResultsEl || !calendarContainer || !backToCalendarBtn) return;
+    if (!searchResultsEl || !calendarContainer || !backToCalendarBtn || !searchSection) return;
 
     calendarContainer.classList.add('hidden');
+    searchSection.classList.remove('hidden'); // 検索セクションを表示する
     backToCalendarBtn.classList.remove('hidden');
 
     // 検索入力にその日付をセット（検索動作と整合させる）
@@ -1219,6 +1221,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function backToCalendar() {
     if (calendarContainer) calendarContainer.classList.remove('hidden');
     if (backToCalendarBtn) backToCalendarBtn.classList.add('hidden');
+    if (searchSection) searchSection.classList.add('hidden'); // 検索セクション全体を隠す
     if (searchForm) searchForm.classList.remove('hidden');
     if (searchHelpers) searchHelpers.style.display = 'flex';
     if (searchResultsEl) searchResultsEl.innerHTML = '';
@@ -1238,6 +1241,7 @@ document.addEventListener('DOMContentLoaded', () => {
       calendarViewBtnText.textContent = '検索表示';
       if (calendarViewBtnIcon) calendarViewBtnIcon.textContent = 'search';
 
+      if (searchSection) searchSection.classList.add('hidden'); // 検索セクション全体を隠す
       if (searchForm) searchForm.classList.add('hidden');
       if (searchHelpers) searchHelpers.style.display = 'none';
       if (searchResultsEl) searchResultsEl.innerHTML = '';
@@ -1257,6 +1261,7 @@ document.addEventListener('DOMContentLoaded', () => {
       calendarViewBtnText.textContent = 'カレンダー表示';
       if (calendarViewBtnIcon) calendarViewBtnIcon.textContent = 'calendar_month';
 
+      if (searchSection) searchSection.classList.remove('hidden'); // 検索セクション全体を表示する
       if (searchForm) searchForm.classList.remove('hidden');
       if (searchHelpers) searchHelpers.style.display = 'flex';
       if (searchResultsEl) searchResultsEl.innerHTML = '';
