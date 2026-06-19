@@ -1013,42 +1013,78 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- カレンダー機能ロジック (v1.9) ---
 
-  // 日報がカレンダーの日付（登録日、または本文内の日付テキスト）と一致するか判定 (v1.9.2)
+  // 日報がカレンダーの日付（登録日、または本文内の日付テキスト）と一致するか判定 (v1.9.7)
   function isNippouMatchingDate(nippou, year, month, day) {
-    // 1. 登録日が一致するか？
     const regDate = formatDateString(nippou.date); // "YYYY/MM/DD"
-    const targetDateLong = `${year}/${String(month + 1).padStart(2, '0')}/${String(day).padStart(2, '0')}`;
-    const targetDateShort = `${year}/${month + 1}/${day}`;
-    if (regDate === targetDateLong || regDate === targetDateShort) {
-      return true;
+    let regYear = year;
+    let regMonth = month;
+    let regDay = day;
+    
+    // 登録日の分解
+    const dateMatch = regDate.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+    if (dateMatch) {
+      regYear = parseInt(dateMatch[1], 10);
+      regMonth = parseInt(dateMatch[2], 10) - 1; // 0-11
+      regDay = parseInt(dateMatch[3], 10);
     }
 
-    // 2. 本文にその日付が含まれているか？
-    const content = nippou.content || '';
-    if (!content) return false;
-
-    const mLong = String(month + 1).padStart(2, '0');
-    const mShort = String(month + 1);
-    const dLong = String(day).padStart(2, '0');
-    const dShort = String(day);
-
-    // パターンA: "YYYY/MM/DD" (例: 2026/06/19)
-    const patternA = `${year}/${mLong}/${dLong}`;
-    // パターンB: "YYYY/M/D" (例: 2026/6/19)
-    const patternB = `${year}/${mShort}/${dShort}`;
-
-    if (content.includes(patternA) || content.includes(patternB)) {
-      return true;
+    const content = (nippou.content || '').trim();
+    
+    // 1. 本文からすべての西暦付き日付（YYYY/M/D または YYYY/MM/DD）を抽出する
+    const ymdRegex = /(\d{4})\/(\d{1,2})\/(\d{1,2})/g;
+    let ymdMatches = [];
+    let matchArr;
+    while ((matchArr = ymdRegex.exec(content)) !== null) {
+      ymdMatches.push({
+        y: parseInt(matchArr[1], 10),
+        m: parseInt(matchArr[2], 10) - 1,
+        d: parseInt(matchArr[3], 10)
+      });
     }
 
-    // パターンC: 前後に数字がない「M/D」または「MM/DD」（例: 6/19 または 06/19）
-    // 誤検知（例: 16/19 や 6/190）を防ぐ
-    function testMonthDayPattern(text, m, d) {
-      const regex = new RegExp(`(?:^|[^\\d])${m}\\/${d}(?:[^\\d]|$)`);
-      return regex.test(text);
+    if (ymdMatches.length > 0) {
+      // 本文に西暦付き日付が指定されている場合
+      // A. 現在のセル (year, month, day) と一致する西暦日付が本文に書かれているか？
+      const hasSpecificYmd = ymdMatches.some(item => item.y === year && item.m === month && item.d === day);
+      if (hasSpecificYmd) {
+        return true;
+      }
+      
+      // B. 一致するものがなく、かつ本文に別の西暦日付が書かれている場合
+      // 登録日のセルであっても、本文で明示的に別の未来日付が指定されているなら登録日には表示しない
+      const isRegDateCell = (regYear === year && regMonth === month && regDay === day);
+      if (isRegDateCell) {
+        // 本文に書かれている西暦日付が「すべて登録日とは異なる」なら、登録日セルには表示しない
+        const allMatchesDifferentFromReg = ymdMatches.every(item => !(item.y === regYear && item.m === regMonth && item.d === regDay));
+        if (allMatchesDifferentFromReg) {
+          return false;
+        }
+      }
     }
 
-    if (testMonthDayPattern(content, mShort, dShort) || testMonthDayPattern(content, mLong, dLong)) {
+    // 2. 本文から月日のみ（M/D または MM/DD）のパターンをチェックする
+    // ただし、表示しているカレンダーの年 (year) と日報の登録年 (regYear) が一致している場合のみ判定
+    if (year === regYear) {
+      const mLong = String(month + 1).padStart(2, '0');
+      const mShort = String(month + 1);
+      const dLong = String(day).padStart(2, '0');
+      const dShort = String(day);
+
+      // 前後に数字がない「M/D」または「MM/DD」をテスト。
+      // 西暦付きの日付（例: 2026/6/19）に誤マッチしないよう、西暦付き日付を除外したテキストで判定する
+      function testMonthDayPattern(text, m, d) {
+        const textWithoutYmd = text.replace(/\d{4}\/\d{1,2}\/\d{1,2}/g, '');
+        const cleanRegex = new RegExp(`(?:^|[^\\d])${m}\\/${d}(?:[^\\d]|$)`);
+        return cleanRegex.test(textWithoutYmd);
+      }
+
+      if (testMonthDayPattern(content, mShort, dShort) || testMonthDayPattern(content, mLong, dLong)) {
+        return true;
+      }
+    }
+
+    // 3. 登録日そのものの判定
+    if (regYear === year && regMonth === month && regDay === day) {
       return true;
     }
 
