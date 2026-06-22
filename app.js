@@ -1581,6 +1581,9 @@ document.addEventListener('DOMContentLoaded', () => {
       photoModal.style.display = 'none';
     }
     if (photoModalImage) {
+      // 空画像の設定によるonerrorエラーポップアップの発生を防ぐため、事前にイベントリスナーを解除
+      photoModalImage.onload = null;
+      photoModalImage.onerror = null;
       photoModalImage.src = '';
       photoModalImage.style.display = 'none';
     }
