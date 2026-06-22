@@ -36,6 +36,25 @@ document.addEventListener('DOMContentLoaded', () => {
   let calendarCurrentYear = new Date().getFullYear();
   let calendarCurrentMonth = new Date().getMonth(); // 0-11
 
+  // --- 写真関連要素と状態変数 (v2.0) ---
+  const photoFolderIdInput = document.getElementById('photoFolderIdInput');
+  const photoSelectBtn = document.getElementById('photoSelectBtn');
+  const photoInput = document.getElementById('photoInput');
+  const photoPreviewContainer = document.getElementById('photoPreviewContainer');
+  const photoPreview = document.getElementById('photoPreview');
+  const photoCancelBtn = document.getElementById('photoCancelBtn');
+  
+  const photoModal = document.getElementById('photoModal');
+  const closePhotoModalBtn = document.getElementById('closePhotoModalBtn');
+  const photoModalSpinner = document.getElementById('photoModalSpinner');
+  const photoModalImage = document.getElementById('photoModalImage');
+  const photoModalDriveLink = document.getElementById('photoModalDriveLink');
+
+  let selectedImageData = ''; // 選択された画像のBase64データ
+  let selectedImageName = '';  // 画像ファイル名
+  let hasImageUpdate = false;  // 画像に変更（追加・更新・削除）があったかどうかのフラグ
+  let photoFolderId = localStorage.getItem('photo_folder_id') || '';
+
   // --- テーマ（ダークモード）設定機能 ---
   const themeToggle = document.getElementById('themeToggle');
   const themeIcon = document.getElementById('themeIcon');
@@ -101,6 +120,8 @@ document.addEventListener('DOMContentLoaded', () => {
     settingsBtn.addEventListener('click', () => {
       // 現在のGAS_URLを入力欄にセット
       gasUrlInput.value = GAS_URL;
+      // 現在の写真フォルダIDをセット (v2.0)
+      if (photoFolderIdInput) photoFolderIdInput.value = photoFolderId;
       
       // 現在の使用者を設定画面のラジオボタンに反映
       const currentAuthor = localStorage.getItem('nippou_author');
@@ -141,13 +162,18 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const newAuthor = selectedAuthorRadio.value;
       
-      // localStorageに保存し、メモリ内のGAS_URL変数も更新
+      // 写真フォルダIDの取得 (v2.0)
+      const newFolderId = photoFolderIdInput ? photoFolderIdInput.value.trim() : '';
+      
+      // localStorageに保存し、メモリ内の変数も更新
       localStorage.setItem('gas_url', newUrl);
       localStorage.setItem('nippou_author', newAuthor);
+      localStorage.setItem('photo_folder_id', newFolderId);
       GAS_URL = newUrl;
+      photoFolderId = newFolderId;
       
       settingsModal.style.display = 'none';
-      showMessage('GASのURLを設定しました！', 'success');
+      showMessage('設定を保存しました！', 'success');
     });
 
     // モーダル外クリックで閉じる
@@ -512,6 +538,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const radios = document.querySelectorAll('input[name="status"]');
     radios.forEach(r => r.checked = false);
     setCurrentDateTime();
+
+    // 写真プレビューもクリア (v2.0)
+    clearPhotoSelection();
   };
 
   cancelEditBtn.addEventListener('click', resetToInsertMode);
@@ -592,6 +621,12 @@ document.addEventListener('DOMContentLoaded', () => {
     urlEncodedData.append('client', client);
     urlEncodedData.append('content', finalContent);
 
+    // 写真のパラメータを追加 (v2.0)
+    urlEncodedData.append('folderId', photoFolderId);
+    urlEncodedData.append('image', selectedImageData); // Base64データ（空の可能性あり）
+    urlEncodedData.append('imageName', selectedImageName);
+    urlEncodedData.append('hasImageUpdate', hasImageUpdate ? 'true' : 'false');
+
     try {
       // GASへPOSTリクエストを送信
       const response = await fetch(GAS_URL, {
@@ -612,6 +647,9 @@ document.addEventListener('DOMContentLoaded', () => {
         showMessage(action === 'update' ? '日報を訂正（上書き）しました！' : '日報を送信しました！', 'success');
         allNippouData = null; // キャッシュクリア (v1.9)
         resetToInsertMode();
+        
+        // 写真添付プレビューと状態をクリア (v2.0)
+        clearPhotoSelection();
         
         // もし検索中なら自動で再検索する
         if (searchResultsEl.innerHTML.trim() !== '' && searchInput.value.trim() !== '') {
@@ -813,7 +851,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       return `
-        <div class="${cardClass}" style="animation-delay: ${animDelay}s" data-card-row="${rowId}">
+        <div class="${cardClass}" style="animation-delay: ${animDelay}s" data-card-row="${rowId}" data-image-id="${result.imageId || ''}">
           <div class="result-header" style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
             <div style="display: flex; align-items: center; gap: 0.5rem;">
               <!-- 一括変更用チェックボックス -->
@@ -823,7 +861,8 @@ document.addEventListener('DOMContentLoaded', () => {
                        data-date="${escapeHtmlAttr(result.date)}" 
                        data-time="${escapeHtmlAttr(result.time)}" 
                        data-client="${escapeHtmlAttr(result.client)}" 
-                       data-content="${escapeHtmlAttr(result.content)}">
+                       data-content="${escapeHtmlAttr(result.content)}"
+                       data-image-id="${result.imageId || ''}">
               </div>
               <div class="result-datetime" style="display: flex; align-items: center; gap: 0.25rem;">
                 <span class="material-symbols-rounded icon-xs">calendar_clock</span>
@@ -831,8 +870,9 @@ document.addEventListener('DOMContentLoaded', () => {
               </div>
             </div>
             <div style="display: flex; gap: 0.5rem; align-items: center;">
+              ${result.imageId ? `<button type="button" class="photo-btn" data-image-id="${result.imageId}"><span class="material-symbols-rounded icon-xs">photo_camera</span>写真</button>` : ''}
               ${rowId && hasProgressTag ? `<button type="button" class="done-btn" data-row="${rowId}" data-date="${escapeHtmlAttr(result.date)}" data-time="${escapeHtmlAttr(result.time)}" data-client="${escapeHtmlAttr(result.client)}" data-content="${escapeHtmlAttr(result.content)}"><span class="material-symbols-rounded icon-xs">check_circle</span>完了</button>` : ''}
-              ${rowId ? `<button type="button" class="edit-btn" data-row="${rowId}" data-date="${escapeHtmlAttr(result.date)}" data-time="${escapeHtmlAttr(result.time)}" data-client="${escapeHtmlAttr(result.client)}" data-content="${escapeHtmlAttr(result.content)}"><span class="material-symbols-rounded icon-xs">edit</span>訂正</button>` : ''}
+              ${rowId ? `<button type="button" class="edit-btn" data-row="${rowId}" data-date="${escapeHtmlAttr(result.date)}" data-time="${escapeHtmlAttr(result.time)}" data-client="${escapeHtmlAttr(result.client)}" data-content="${escapeHtmlAttr(result.content)}" data-image-id="${result.imageId || ''}"><span class="material-symbols-rounded icon-xs">edit</span>訂正</button>` : ''}
             </div>
           </div>
           <div class="result-client">
@@ -851,6 +891,16 @@ document.addEventListener('DOMContentLoaded', () => {
   searchResultsEl.addEventListener('click', async (e) => {
     // 一括変更モード中は拡大表示や個別ボタン処理は無効化する
     if (typeof bulkEditMode !== 'undefined' && bulkEditMode) return;
+
+    // --- 写真ボタン処理 (v2.0) ---
+    const photoBtn = e.target.closest('.photo-btn');
+    if (photoBtn) {
+      const imageId = photoBtn.getAttribute('data-image-id');
+      if (imageId) {
+        openPhotoModal(imageId);
+      }
+      return; // 拡大表示モーダルなど、他の処理が走らないように戻る
+    }
 
     // --- 完了ボタン処理 ---
     const doneBtn = e.target.closest('.done-btn');
@@ -919,8 +969,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const timeVal = btn.getAttribute('data-time');
       const clientVal = btn.getAttribute('data-client');
       const contentVal = btn.getAttribute('data-content');
+      const imageIdVal = btn.getAttribute('data-image-id') || '';
       
-      startEditing(rowId, dateVal, timeVal, clientVal, contentVal);
+      startEditing(rowId, dateVal, timeVal, clientVal, contentVal, imageIdVal);
       return;
     }
 
@@ -932,7 +983,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 編集開始用関数
-  const startEditing = (rowId, dateVal, timeVal, clientVal, contentVal) => {
+  const startEditing = (rowId, dateVal, timeVal, clientVal, contentVal, imageId) => {
     // 画面の最上部（入力画面）までスムーズにスクロール
     window.scrollTo({ top: 0, behavior: 'smooth' });
     
@@ -950,6 +1001,20 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const clientInput = document.getElementById('client');
     clientInput.value = clientVal || '';
+
+    // 写真のプレビュー復元 (v2.0)
+    clearPhotoSelection();
+    if (imageId) {
+      if (photoPreview && photoPreviewContainer) {
+        photoPreview.src = `https://drive.google.com/thumbnail?id=${imageId}&sz=w100`;
+        photoPreviewContainer.classList.remove('hidden');
+      }
+      // 初期状態では画像変更なし (送信しないが、元データを維持するよう hasImageUpdate = false)
+      hasImageUpdate = false;
+      selectedImageData = '';
+    } else {
+      hasImageUpdate = false;
+    }
     
     // コンテンツとタグ・担当者の分離
     let rawContent = contentVal || '';
@@ -1383,6 +1448,100 @@ document.addEventListener('DOMContentLoaded', () => {
       loadAllNippouData().then(nippous => {
         renderCalendar(calendarCurrentYear, calendarCurrentMonth, nippous);
       });
+    });
+  }
+
+  // --- 写真関連ロジック (v2.0) ---
+
+  // 写真プレビューとデータ状態をクリアする
+  function clearPhotoSelection() {
+    selectedImageData = '';
+    selectedImageName = '';
+    hasImageUpdate = true; // クリアされた（削除された）場合も更新扱いにする
+    if (photoPreview) photoPreview.src = '';
+    if (photoPreviewContainer) photoPreviewContainer.classList.add('hidden');
+    if (photoInput) photoInput.value = '';
+  }
+
+  // 「写真を撮影・選択」ボタンクリック
+  if (photoSelectBtn && photoInput) {
+    photoSelectBtn.addEventListener('click', () => {
+      photoInput.click();
+    });
+  }
+
+  // ファイル選択完了イベント
+  if (photoInput) {
+    photoInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      selectedImageName = file.name || 'photo.jpg';
+
+      // プレビュー用にFileReaderでBase64ロード
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        selectedImageData = event.target.result; // Base64データ（data:image/jpeg;base64,...）
+        if (photoPreview) photoPreview.src = selectedImageData;
+        if (photoPreviewContainer) photoPreviewContainer.classList.remove('hidden');
+        hasImageUpdate = true;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // プレビュー削除「×」ボタン
+  if (photoCancelBtn) {
+    photoCancelBtn.addEventListener('click', () => {
+      clearPhotoSelection();
+    });
+  }
+
+  // 写真プレビューモーダルを開く
+  function openPhotoModal(imageId) {
+    if (!photoModal || !photoModalImage || !photoModalSpinner || !photoModalDriveLink) return;
+
+    photoModal.style.display = 'flex';
+    photoModalSpinner.style.display = 'block';
+    photoModalImage.style.display = 'none';
+
+    // Google Drive サムネイル表示URL
+    const thumbnailUrl = `https://drive.google.com/thumbnail?id=${imageId}&sz=w800`;
+    photoModalImage.src = thumbnailUrl;
+    photoModalDriveLink.href = `https://drive.google.com/open?id=${imageId}`;
+
+    photoModalImage.onload = () => {
+      photoModalSpinner.style.display = 'none';
+      photoModalImage.style.display = 'block';
+    };
+
+    photoModalImage.onerror = () => {
+      photoModalSpinner.style.display = 'none';
+      alert('写真の読み込みに失敗しました。アクセス権限やIDをご確認ください。');
+    };
+  }
+
+  // 写真プレビューモーダルを閉じる
+  function closePhotoModal() {
+    if (photoModal) {
+      photoModal.style.display = 'none';
+    }
+    if (photoModalImage) {
+      photoModalImage.src = '';
+      photoModalImage.style.display = 'none';
+    }
+  }
+
+  if (closePhotoModalBtn) {
+    closePhotoModalBtn.addEventListener('click', closePhotoModal);
+  }
+
+  if (photoModal) {
+    // モーダル背景クリックで閉じる
+    photoModal.addEventListener('click', (e) => {
+      if (e.target === photoModal) {
+        closePhotoModal();
+      }
     });
   }
 });

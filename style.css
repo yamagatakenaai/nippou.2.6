@@ -1004,3 +1004,34 @@ button {
   letter-spacing: -0.04em;
 }
 
+/* --- 写真機能用のスタイル (v2.0) --- */
+.photo-btn {
+  background-color: rgba(99, 102, 241, 0.1);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: auto;
+}
+
+.photo-btn:hover {
+  background-color: var(--primary);
+  color: white;
+}
+
+/* 拡大中カード内での写真ボタン */
+.expanded-state .photo-btn {
+  display: flex !important; /* カード拡大中も写真ボタンは表示する */
+  font-size: 0.95rem !important;
+  padding: 0.4rem 0.8rem !important;
+  border-radius: 0.5rem !important;
+  margin-top: 0.75rem !important;
+  align-self: flex-start;
+}
+
