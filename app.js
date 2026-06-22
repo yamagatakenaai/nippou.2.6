@@ -661,7 +661,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     } catch (error) {
       console.error('Error:', error);
-      showMessage('送信に失敗しました。', 'error');
+      showMessage(error.message || '送信に失敗しました。', 'error');
     } finally {
       // ボタンの状態を元に戻す
       submitBtn.disabled = false;
