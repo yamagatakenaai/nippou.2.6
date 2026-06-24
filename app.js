@@ -36,24 +36,29 @@ document.addEventListener('DOMContentLoaded', () => {
   let calendarCurrentYear = new Date().getFullYear();
   let calendarCurrentMonth = new Date().getMonth(); // 0-11
 
-  // --- 写真関連要素と状態変数 (v2.0) ---
+  // --- 写真関連要素と状態変数 (v2.1 複数対応) ---
   const photoFolderIdInput = document.getElementById('photoFolderIdInput');
   const photoSelectBtn = document.getElementById('photoSelectBtn');
   const photoInput = document.getElementById('photoInput');
   const photoPreviewContainer = document.getElementById('photoPreviewContainer');
-  const photoPreview = document.getElementById('photoPreview');
-  const photoCancelBtn = document.getElementById('photoCancelBtn');
   
   const photoModal = document.getElementById('photoModal');
   const closePhotoModalBtn = document.getElementById('closePhotoModalBtn');
   const photoModalSpinner = document.getElementById('photoModalSpinner');
   const photoModalImage = document.getElementById('photoModalImage');
   const photoModalDriveLink = document.getElementById('photoModalDriveLink');
+  
+  // v2.1 複数写真ポップアップ追加要素
+  const prevPhotoBtn = document.getElementById('prevPhotoBtn');
+  const nextPhotoBtn = document.getElementById('nextPhotoBtn');
+  const photoModalBadge = document.getElementById('photoModalBadge');
 
-  let selectedImageData = ''; // 選択された画像のBase64データ
-  let selectedImageName = '';  // 画像ファイル名
+  let selectedImages = [];     // 各要素: { data: 'base64...', name: 'photo.jpg', isNew: true } または { id: 'drive_id', name: 'photo.jpg', isExisting: true }
   let hasImageUpdate = false;  // 画像に変更（追加・更新・削除）があったかどうかのフラグ
   let photoFolderId = localStorage.getItem('photo_folder_id') || '';
+
+  let activeModalImages = [];  // モーダル表示中の画像IDの配列
+  let activeModalIndex = 0;    // 現在表示中の画像インデックス
 
   // --- テーマ（ダークモード）設定機能 ---
   const themeToggle = document.getElementById('themeToggle');
@@ -621,11 +626,21 @@ document.addEventListener('DOMContentLoaded', () => {
     urlEncodedData.append('client', client);
     urlEncodedData.append('content', finalContent);
 
-    // 写真のパラメータを追加 (v2.0)
+    // 写真のパラメータを追加 (v2.1 複数対応)
     urlEncodedData.append('folderId', photoFolderId);
-    urlEncodedData.append('image', selectedImageData); // Base64データ（空の可能性あり）
-    urlEncodedData.append('imageName', selectedImageName);
     urlEncodedData.append('hasImageUpdate', hasImageUpdate ? 'true' : 'false');
+    if (hasImageUpdate) {
+      const existingIds = selectedImages
+        .filter(img => img.isExisting)
+        .map(img => img.id)
+        .join(',');
+      const newImages = selectedImages
+        .filter(img => img.isNew)
+        .map(img => ({ data: img.data, name: img.name }));
+      
+      urlEncodedData.append('existingImageIds', existingIds);
+      urlEncodedData.append('newImages', JSON.stringify(newImages));
+    }
 
     try {
       // GASへPOSTリクエストを送信
@@ -888,90 +903,100 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   // 訂正・完了ボタンのクリックイベント ＆ カード拡大表示（イベントデリゲーション）
+  // --- 日報のアクション共通処理 (v2.1 拡大表示時のボタン対応) ---
+  const handlePhotoAction = (imageId) => {
+    if (imageId) {
+      openPhotoModal(imageId);
+    }
+  };
+
+  const handleDoneAction = async (rowId, dateVal, timeVal, clientVal, contentVal, doneBtn) => {
+    if (!confirm('この日報を完了に変更しますか？')) return;
+    
+    if (!GAS_URL) {
+      showMessage('先に右上の設定（歯車）ボタンから、GASのURLを設定してください。', 'error');
+      return;
+    }
+    
+    const dateFormatted = formatDateString(dateVal); // YYYY/MM/DDに整形
+    const timeFormatted = formatTimeString(timeVal);
+    let contentFormatted = contentVal || '';
+    contentFormatted = contentFormatted.replace(/\[#\]/g, '[!]');
+    
+    const originalText = doneBtn.innerHTML;
+    doneBtn.innerHTML = '<span class="material-symbols-rounded icon-xs">sync</span>更新中';
+    doneBtn.disabled = true;
+    
+    try {
+      const urlEncodedData = new URLSearchParams();
+      urlEncodedData.append('action', 'update');
+      urlEncodedData.append('row', rowId);
+      urlEncodedData.append('date', dateFormatted);
+      urlEncodedData.append('time', timeFormatted);
+      urlEncodedData.append('client', clientVal || '');
+      urlEncodedData.append('content', contentFormatted);
+
+      const response = await fetch(GAS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: urlEncodedData.toString()
+      });
+
+      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        showMessage('日報を完了状態に変更しました！', 'success');
+        allNippouData = null; // キャッシュクリア (v1.9)
+        searchForm.dispatchEvent(new Event('submit'));
+      } else {
+        throw new Error(result.message || '更新に失敗しました');
+      }
+    } catch (err) {
+      console.error(err);
+      showMessage('完了の更新に失敗しました。', 'error');
+      doneBtn.innerHTML = originalText;
+      doneBtn.disabled = false;
+    }
+  };
+
+  const handleEditAction = (rowId, dateVal, timeVal, clientVal, contentVal, imageIdVal) => {
+    startEditing(rowId, dateVal, timeVal, clientVal, contentVal, imageIdVal);
+  };
+
   searchResultsEl.addEventListener('click', async (e) => {
     // 一括変更モード中は拡大表示や個別ボタン処理は無効化する
     if (typeof bulkEditMode !== 'undefined' && bulkEditMode) return;
 
-    // --- 写真ボタン処理 (v2.0) ---
+    // --- 写真ボタン処理 ---
     const photoBtn = e.target.closest('.photo-btn');
     if (photoBtn) {
-      const imageId = photoBtn.getAttribute('data-image-id');
-      if (imageId) {
-        openPhotoModal(imageId);
-      }
-      return; // 拡大表示モーダルなど、他の処理が走らないように戻る
+      handlePhotoAction(photoBtn.getAttribute('data-image-id'));
+      return;
     }
 
     // --- 完了ボタン処理 ---
     const doneBtn = e.target.closest('.done-btn');
     if (doneBtn) {
-      if (!confirm('この日報を完了に変更しますか？')) return;
-      
-      if (!GAS_URL) {
-        showMessage('先に右上の設定（歯車）ボタンから、GASのURLを設定してください。', 'error');
-        return;
-      }
-      
       const rowId = doneBtn.getAttribute('data-row');
-      const dateVal = formatDateString(doneBtn.getAttribute('data-date')); // YYYY/MM/DDに整形
-      const timeVal = formatTimeString(doneBtn.getAttribute('data-time'));
+      const dateVal = doneBtn.getAttribute('data-date');
+      const timeVal = doneBtn.getAttribute('data-time');
       const clientVal = doneBtn.getAttribute('data-client') || '';
-      let contentVal = doneBtn.getAttribute('data-content') || '';
-      
-      // コンテンツ内の[#]を[!]に置き換える
-      contentVal = contentVal.replace(/\[#\]/g, '[!]');
-      
-      // スピナー表示（ボタンの見た目変更）
-      const originalText = doneBtn.innerHTML;
-      doneBtn.innerHTML = '<span class="material-symbols-rounded icon-xs">sync</span>更新中';
-      doneBtn.disabled = true;
-      
-      try {
-        const urlEncodedData = new URLSearchParams();
-        urlEncodedData.append('action', 'update');
-        urlEncodedData.append('row', rowId);
-        urlEncodedData.append('date', dateVal);
-        urlEncodedData.append('time', timeVal);
-        urlEncodedData.append('client', clientVal);
-        urlEncodedData.append('content', contentVal);
-
-        const response = await fetch(GAS_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: urlEncodedData.toString()
-        });
-
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-        const result = await response.json();
-        
-        if (result.status === 'success') {
-          showMessage('日報を完了状態に変更しました！', 'success');
-          allNippouData = null; // キャッシュクリア (v1.9)
-          // 自動で現在の検索ワードで再検索して画面を更新
-          searchForm.dispatchEvent(new Event('submit'));
-        } else {
-          throw new Error(result.message || '更新に失敗しました');
-        }
-      } catch (err) {
-        console.error(err);
-        showMessage('完了の更新に失敗しました。', 'error');
-        doneBtn.innerHTML = originalText;
-        doneBtn.disabled = false;
-      }
+      const contentVal = doneBtn.getAttribute('data-content') || '';
+      await handleDoneAction(rowId, dateVal, timeVal, clientVal, contentVal, doneBtn);
       return;
     }
 
     // --- 訂正ボタン処理 ---
-    const btn = e.target.closest('.edit-btn');
-    if (btn) {
-      const rowId = btn.getAttribute('data-row');
-      const dateVal = btn.getAttribute('data-date');
-      const timeVal = btn.getAttribute('data-time');
-      const clientVal = btn.getAttribute('data-client');
-      const contentVal = btn.getAttribute('data-content');
-      const imageIdVal = btn.getAttribute('data-image-id') || '';
-      
-      startEditing(rowId, dateVal, timeVal, clientVal, contentVal, imageIdVal);
+    const editBtn = e.target.closest('.edit-btn');
+    if (editBtn) {
+      const rowId = editBtn.getAttribute('data-row');
+      const dateVal = editBtn.getAttribute('data-date');
+      const timeVal = editBtn.getAttribute('data-time');
+      const clientVal = editBtn.getAttribute('data-client');
+      const contentVal = editBtn.getAttribute('data-content');
+      const imageIdVal = editBtn.getAttribute('data-image-id') || '';
+      handleEditAction(rowId, dateVal, timeVal, clientVal, contentVal, imageIdVal);
       return;
     }
 
@@ -981,6 +1006,51 @@ document.addEventListener('DOMContentLoaded', () => {
       openCardModal(card);
     }
   });
+
+  // カード拡大表示（詳細モーダル）内でのボタンクリックイベント監視 (v2.1)
+  if (expandedCardContainer) {
+    expandedCardContainer.addEventListener('click', async (e) => {
+      // 写真ボタン
+      const photoBtn = e.target.closest('.photo-btn');
+      if (photoBtn) {
+        handlePhotoAction(photoBtn.getAttribute('data-image-id'));
+        return;
+      }
+
+      // 完了ボタン
+      const doneBtn = e.target.closest('.done-btn');
+      if (doneBtn) {
+        const rowId = doneBtn.getAttribute('data-row');
+        const dateVal = doneBtn.getAttribute('data-date');
+        const timeVal = doneBtn.getAttribute('data-time');
+        const clientVal = doneBtn.getAttribute('data-client') || '';
+        const contentVal = doneBtn.getAttribute('data-content') || '';
+        await handleDoneAction(rowId, dateVal, timeVal, clientVal, contentVal, doneBtn);
+        closeCardModal();
+        return;
+      }
+
+      // 訂正ボタン
+      const editBtn = e.target.closest('.edit-btn');
+      if (editBtn) {
+        const rowId = editBtn.getAttribute('data-row');
+        const dateVal = editBtn.getAttribute('data-date');
+        const timeVal = editBtn.getAttribute('data-time');
+        const clientVal = editBtn.getAttribute('data-client');
+        const contentVal = editBtn.getAttribute('data-content');
+        const imageIdVal = editBtn.getAttribute('data-image-id') || '';
+        handleEditAction(rowId, dateVal, timeVal, clientVal, contentVal, imageIdVal);
+        closeCardModal();
+        return;
+      }
+
+      // 閉じる×ボタン
+      const closeBtn = e.target.closest('.expanded-close-btn');
+      if (closeBtn) {
+        closeCardModal();
+      }
+    });
+  }
 
   // 編集開始用関数
   const startEditing = (rowId, dateVal, timeVal, clientVal, contentVal, imageId) => {
@@ -1002,16 +1072,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const clientInput = document.getElementById('client');
     clientInput.value = clientVal || '';
 
-    // 写真のプレビュー復元 (v2.0)
+    // 写真のプレビュー復元 (v2.1 複数対応)
     clearPhotoSelection();
     if (imageId) {
-      if (photoPreview && photoPreviewContainer) {
-        photoPreview.src = `https://drive.google.com/thumbnail?id=${imageId}&sz=w100`;
-        photoPreviewContainer.classList.remove('hidden');
-      }
+      const ids = imageId.split(',').filter(id => id.trim() !== '');
+      ids.forEach((id, index) => {
+        selectedImages.push({
+          id: id,
+          name: `photo_${index + 1}.jpg`,
+          isExisting: true
+        });
+      });
+      renderPhotoPreviews();
       // 初期状態では画像変更なし (送信しないが、元データを維持するよう hasImageUpdate = false)
       hasImageUpdate = false;
-      selectedImageData = '';
     } else {
       hasImageUpdate = false;
     }
@@ -1495,14 +1569,64 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 写真プレビューとデータ状態をクリアする
+  // 写真プレビューとデータ状態をクリアする (v2.1 複数対応)
   function clearPhotoSelection() {
-    selectedImageData = '';
-    selectedImageName = '';
+    selectedImages = [];
     hasImageUpdate = true; // クリアされた（削除された）場合も更新扱いにする
-    if (photoPreview) photoPreview.src = '';
-    if (photoPreviewContainer) photoPreviewContainer.classList.add('hidden');
+    if (photoPreviewContainer) {
+      photoPreviewContainer.innerHTML = '';
+      photoPreviewContainer.classList.add('hidden');
+    }
     if (photoInput) photoInput.value = '';
+  }
+
+  // 特定の写真のプレビューと管理用配列からの削除 (v2.1 複数対応)
+  function removePhoto(index) {
+    selectedImages.splice(index, 1);
+    hasImageUpdate = true;
+    renderPhotoPreviews();
+  }
+
+  // 選択・追加された写真のプレビュー表示を描画する (v2.1 複数対応)
+  function renderPhotoPreviews() {
+    if (!photoPreviewContainer) return;
+    
+    photoPreviewContainer.innerHTML = '';
+    
+    if (selectedImages.length === 0) {
+      photoPreviewContainer.classList.add('hidden');
+      return;
+    }
+    
+    selectedImages.forEach((img, index) => {
+      const item = document.createElement('div');
+      item.className = 'photo-preview-item';
+      
+      const imgSrc = img.isExisting 
+        ? `https://drive.google.com/thumbnail?id=${img.id}&sz=w100` 
+        : img.data;
+        
+      const imageEl = document.createElement('img');
+      imageEl.src = imgSrc;
+      imageEl.alt = img.name;
+      
+      const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
+      deleteBtn.className = 'photo-preview-delete-btn';
+      deleteBtn.innerHTML = '<span class="material-symbols-rounded">close</span>';
+      
+      // 個別削除
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        removePhoto(index);
+      });
+      
+      item.appendChild(imageEl);
+      item.appendChild(deleteBtn);
+      photoPreviewContainer.appendChild(item);
+    });
+    
+    photoPreviewContainer.classList.remove('hidden');
   }
 
   // 「写真を撮影・選択」ボタンクリック
@@ -1512,81 +1636,135 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // ファイル選択完了イベント (v2.0.1: 画像自動リサイズ・圧縮処理を追加)
+  // ファイル選択完了イベント (v2.1: 複数写真および圧縮リサイズループ対応)
   if (photoInput) {
     photoInput.addEventListener('change', async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
 
-      selectedImageName = file.name || 'photo.jpg';
-      // 圧縮してjpegにするため、拡張子を.jpgにする
-      if (!selectedImageName.toLowerCase().endsWith('.jpg') && !selectedImageName.toLowerCase().endsWith('.jpeg')) {
-        const lastDot = selectedImageName.lastIndexOf('.');
-        if (lastDot !== -1) {
-          selectedImageName = selectedImageName.substring(0, lastDot) + '.jpg';
-        } else {
-          selectedImageName += '.jpg';
+      // 枚数制限チェック (既存画像と合わせて最大5枚まで)
+      if (selectedImages.length + files.length > 5) {
+        alert('写真の添付は1つの日報に対して最大5枚までです。');
+        photoInput.value = '';
+        return;
+      }
+
+      // 順次画像を圧縮して管理配列へ追加
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        let name = file.name || `photo_${Date.now()}_${i}.jpg`;
+        
+        // 圧縮してjpegにするため、拡張子を.jpgにする
+        if (!name.toLowerCase().endsWith('.jpg') && !name.toLowerCase().endsWith('.jpeg')) {
+          const lastDot = name.lastIndexOf('.');
+          if (lastDot !== -1) {
+            name = name.substring(0, lastDot) + '.jpg';
+          } else {
+            name += '.jpg';
+          }
+        }
+
+        try {
+          // 画像を最大1024pxサイズ、品質70%に自動リサイズ・圧縮
+          const compressedBase64 = await resizeAndCompressImage(file, 1024, 1024, 0.7);
+          selectedImages.push({
+            data: compressedBase64,
+            name: name,
+            isNew: true
+          });
+        } catch (err) {
+          console.error('Image compression error:', err);
+          alert(`${file.name || '画像'} の処理に失敗しました。`);
         }
       }
 
-      try {
-        // 画像を最大1024pxサイズ、品質70%に自動リサイズ・圧縮
-        const compressedBase64 = await resizeAndCompressImage(file, 1024, 1024, 0.7);
-        selectedImageData = compressedBase64;
-        
-        if (photoPreview) photoPreview.src = selectedImageData;
-        if (photoPreviewContainer) photoPreviewContainer.classList.remove('hidden');
-        hasImageUpdate = true;
-      } catch (err) {
-        console.error('Image compression error:', err);
-        alert('画像の処理に失敗しました。');
-      }
+      hasImageUpdate = true;
+      renderPhotoPreviews();
+      photoInput.value = ''; // 次回同じファイルを再選択できるようクリア
     });
   }
 
-  // プレビュー削除「×」ボタン
-  if (photoCancelBtn) {
-    photoCancelBtn.addEventListener('click', () => {
-      clearPhotoSelection();
-    });
-  }
-
-  // 写真プレビューモーダルを開く
-  function openPhotoModal(imageId) {
-    if (!photoModal || !photoModalImage || !photoModalSpinner || !photoModalDriveLink) return;
-
-    photoModal.style.display = 'flex';
+  // 写真表示ポップアップ（スライドショー）の読み込みヘルパー
+  function loadActiveModalImage() {
+    if (activeModalImages.length === 0 || !photoModalImage || !photoModalSpinner || !photoModalDriveLink) return;
+    
+    const currentId = activeModalImages[activeModalIndex];
+    
     photoModalSpinner.style.display = 'block';
     photoModalImage.style.display = 'none';
-
-    // Google Drive サムネイル表示URL
-    const thumbnailUrl = `https://drive.google.com/thumbnail?id=${imageId}&sz=w800`;
-    photoModalImage.src = thumbnailUrl;
-    photoModalDriveLink.href = `https://drive.google.com/open?id=${imageId}`;
-
+    
     photoModalImage.onload = () => {
       photoModalSpinner.style.display = 'none';
       photoModalImage.style.display = 'block';
     };
-
+    
     photoModalImage.onerror = () => {
       photoModalSpinner.style.display = 'none';
-      alert('写真の読み込みに失敗しました。アクセス権限やIDをご確認ください。');
+      if (photoModalImage.src !== '') {
+        alert('写真の読み込みに失敗しました。アクセス権限やIDをご確認ください。');
+      }
     };
+    
+    photoModalImage.src = `https://drive.google.com/thumbnail?id=${currentId}&sz=w800`;
+    photoModalDriveLink.href = `https://drive.google.com/open?id=${currentId}`;
+    
+    if (photoModalBadge) {
+      photoModalBadge.textContent = `${activeModalIndex + 1} / ${activeModalImages.length}`;
+    }
   }
 
-  // 写真プレビューモーダルを閉じる
+  // 写真プレビューモーダルを開く (v2.1 複数写真スライドショー対応)
+  function openPhotoModal(imageId) {
+    if (!photoModal || !photoModalImage || !photoModalSpinner || !photoModalDriveLink) return;
+
+    // カンマ区切りの写真IDを配列に変換
+    activeModalImages = imageId.split(',').filter(id => id.trim() !== '');
+    if (activeModalImages.length === 0) return;
+    
+    activeModalIndex = 0;
+    photoModal.style.display = 'flex';
+    
+    // 複数ある場合のみ切り替えボタンとバッジを表示
+    const showControls = activeModalImages.length > 1;
+    if (prevPhotoBtn) prevPhotoBtn.style.display = showControls ? 'flex' : 'none';
+    if (nextPhotoBtn) nextPhotoBtn.style.display = showControls ? 'flex' : 'none';
+    if (photoModalBadge) photoModalBadge.style.display = showControls ? 'block' : 'none';
+
+    loadActiveModalImage();
+  }
+
+  // 写真プレビューモーダルを閉じる (v2.1 複数対応)
   function closePhotoModal() {
     if (photoModal) {
       photoModal.style.display = 'none';
     }
     if (photoModalImage) {
-      // 空画像の設定によるonerrorエラーポップアップの発生を防ぐため、事前にイベントリスナーを解除
       photoModalImage.onload = null;
       photoModalImage.onerror = null;
       photoModalImage.src = '';
       photoModalImage.style.display = 'none';
     }
+    activeModalImages = [];
+    activeModalIndex = 0;
+  }
+
+  // 切り替えボタンイベントのバインド (v2.1)
+  if (prevPhotoBtn) {
+    prevPhotoBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (activeModalImages.length <= 1) return;
+      activeModalIndex = (activeModalIndex - 1 + activeModalImages.length) % activeModalImages.length;
+      loadActiveModalImage();
+    });
+  }
+
+  if (nextPhotoBtn) {
+    nextPhotoBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (activeModalImages.length <= 1) return;
+      activeModalIndex = (activeModalIndex + 1) % activeModalImages.length;
+      loadActiveModalImage();
+    });
   }
 
   if (closePhotoModalBtn) {
