@@ -36,10 +36,15 @@ document.addEventListener('DOMContentLoaded', () => {
   let calendarCurrentYear = new Date().getFullYear();
   let calendarCurrentMonth = new Date().getMonth(); // 0-11
 
-  // --- 写真関連要素と状態変数 (v2.1 複数対応) ---
+  // --- 写真関連要素と状態変数 (v2.1.2 統合対応) ---
   const photoFolderIdInput = document.getElementById('photoFolderIdInput');
-  const photoSelectBtn = document.getElementById('photoSelectBtn');
-  const photoInput = document.getElementById('photoInput');
+  const photoAddBtn = document.getElementById('photoAddBtn');
+  const photoSourceModal = document.getElementById('photoSourceModal');
+  const modalCameraBtn = document.getElementById('modalCameraBtn');
+  const modalGalleryBtn = document.getElementById('modalGalleryBtn');
+  const closePhotoSourceModalBtn = document.getElementById('closePhotoSourceModalBtn');
+  const cameraInput = document.getElementById('cameraInput');
+  const galleryInput = document.getElementById('galleryInput');
   const photoPreviewContainer = document.getElementById('photoPreviewContainer');
   
   const photoModal = document.getElementById('photoModal');
@@ -1569,7 +1574,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 写真プレビューとデータ状態をクリアする (v2.1 複数対応)
+  // 写真プレビューとデータ状態をクリアする (v2.1.1 複数対応)
   function clearPhotoSelection() {
     selectedImages = [];
     hasImageUpdate = true; // クリアされた（削除された）場合も更新扱いにする
@@ -1577,7 +1582,8 @@ document.addEventListener('DOMContentLoaded', () => {
       photoPreviewContainer.innerHTML = '';
       photoPreviewContainer.classList.add('hidden');
     }
-    if (photoInput) photoInput.value = '';
+    if (cameraInput) cameraInput.value = '';
+    if (galleryInput) galleryInput.value = '';
   }
 
   // 特定の写真のプレビューと管理用配列からの削除 (v2.1 複数対応)
@@ -1629,58 +1635,106 @@ document.addEventListener('DOMContentLoaded', () => {
     photoPreviewContainer.classList.remove('hidden');
   }
 
-  // 「写真を撮影・選択」ボタンクリック
-  if (photoSelectBtn && photoInput) {
-    photoSelectBtn.addEventListener('click', () => {
-      photoInput.click();
+  // 選択された画像ファイル群を処理して selectedImages に追加する共通関数 (v2.1.1)
+  async function addSelectedFiles(files, inputEl) {
+    if (!files || files.length === 0) return;
+
+    // 枚数制限チェック (既存画像と合わせて最大5枚まで)
+    if (selectedImages.length + files.length > 5) {
+      alert('写真の添付は1つの日報に対して最大5枚までです。');
+      if (inputEl) inputEl.value = '';
+      return;
+    }
+
+    // 順次画像を圧縮して管理配列へ追加
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      let name = file.name || `photo_${Date.now()}_${i}.jpg`;
+      
+      // 圧縮してjpegにするため、拡張子を.jpgにする
+      if (!name.toLowerCase().endsWith('.jpg') && !name.toLowerCase().endsWith('.jpeg')) {
+        const lastDot = name.lastIndexOf('.');
+        if (lastDot !== -1) {
+          name = name.substring(0, lastDot) + '.jpg';
+        } else {
+          name += '.jpg';
+        }
+      }
+
+      try {
+        // 画像を最大1024pxサイズ、品質70%に自動リサイズ・圧縮
+        const compressedBase64 = await resizeAndCompressImage(file, 1024, 1024, 0.7);
+        selectedImages.push({
+          data: compressedBase64,
+          name: name,
+          isNew: true
+        });
+      } catch (err) {
+        console.error('Image compression error:', err);
+        alert(`${file.name || '画像'} の処理に失敗しました。`);
+      }
+    }
+
+    hasImageUpdate = true;
+    renderPhotoPreviews();
+    if (inputEl) inputEl.value = ''; // 再選択可能にするためクリア
+  }
+
+  // --- 写真追加ソース選択モーダルの制御 (v2.1.2) ---
+  if (photoAddBtn && photoSourceModal) {
+    photoAddBtn.addEventListener('click', () => {
+      // 既存画像と合わせて最大5枚制限チェック
+      if (selectedImages.length >= 5) {
+        alert('写真の添付は1つの日報に対して最大5枚までです。');
+        return;
+      }
+      photoSourceModal.style.display = 'flex';
     });
   }
 
-  // ファイル選択完了イベント (v2.1: 複数写真および圧縮リサイズループ対応)
-  if (photoInput) {
-    photoInput.addEventListener('change', async (e) => {
-      const files = e.target.files;
-      if (!files || files.length === 0) return;
+  // モーダル内の「写真を撮影する」ボタン
+  if (modalCameraBtn && cameraInput && photoSourceModal) {
+    modalCameraBtn.addEventListener('click', () => {
+      photoSourceModal.style.display = 'none';
+      cameraInput.click();
+    });
+  }
 
-      // 枚数制限チェック (既存画像と合わせて最大5枚まで)
-      if (selectedImages.length + files.length > 5) {
-        alert('写真の添付は1つの日報に対して最大5枚までです。');
-        photoInput.value = '';
-        return;
+  // モーダル内の「アルバムから選択する」ボタン
+  if (modalGalleryBtn && galleryInput && photoSourceModal) {
+    modalGalleryBtn.addEventListener('click', () => {
+      photoSourceModal.style.display = 'none';
+      galleryInput.click();
+    });
+  }
+
+  // モーダルを閉じる×ボタン
+  if (closePhotoSourceModalBtn && photoSourceModal) {
+    closePhotoSourceModalBtn.addEventListener('click', () => {
+      photoSourceModal.style.display = 'none';
+    });
+  }
+
+  // モーダルの背景クリックで閉じる
+  if (photoSourceModal) {
+    photoSourceModal.addEventListener('click', (e) => {
+      if (e.target === photoSourceModal) {
+        photoSourceModal.style.display = 'none';
       }
+    });
+  }
 
-      // 順次画像を圧縮して管理配列へ追加
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        let name = file.name || `photo_${Date.now()}_${i}.jpg`;
-        
-        // 圧縮してjpegにするため、拡張子を.jpgにする
-        if (!name.toLowerCase().endsWith('.jpg') && !name.toLowerCase().endsWith('.jpeg')) {
-          const lastDot = name.lastIndexOf('.');
-          if (lastDot !== -1) {
-            name = name.substring(0, lastDot) + '.jpg';
-          } else {
-            name += '.jpg';
-          }
-        }
+  // カメラ撮影完了イベント (1枚)
+  if (cameraInput) {
+    cameraInput.addEventListener('change', async (e) => {
+      await addSelectedFiles(e.target.files, cameraInput);
+    });
+  }
 
-        try {
-          // 画像を最大1024pxサイズ、品質70%に自動リサイズ・圧縮
-          const compressedBase64 = await resizeAndCompressImage(file, 1024, 1024, 0.7);
-          selectedImages.push({
-            data: compressedBase64,
-            name: name,
-            isNew: true
-          });
-        } catch (err) {
-          console.error('Image compression error:', err);
-          alert(`${file.name || '画像'} の処理に失敗しました。`);
-        }
-      }
-
-      hasImageUpdate = true;
-      renderPhotoPreviews();
-      photoInput.value = ''; // 次回同じファイルを再選択できるようクリア
+  // アルバム選択完了イベント (複数可)
+  if (galleryInput) {
+    galleryInput.addEventListener('change', async (e) => {
+      await addSelectedFiles(e.target.files, galleryInput);
     });
   }
 
