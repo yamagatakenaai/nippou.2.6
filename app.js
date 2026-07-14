@@ -1157,7 +1157,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- カレンダー機能ロジック (v1.9) ---
 
-  // 日報がカレンダーの日付（登録日、または本文内の日付テキスト）と一致するか判定 (v1.9.7)
+  // 日報がカレンダーの日付（登録日、または本文内の日付テキスト）と一致するか判定 (v2.1.3)
   function isNippouMatchingDate(nippou, year, month, day) {
     const regDate = formatDateString(nippou.date); // "YYYY/MM/DD"
     let regYear = year;
@@ -1170,6 +1170,11 @@ document.addEventListener('DOMContentLoaded', () => {
       regYear = parseInt(dateMatch[1], 10);
       regMonth = parseInt(dateMatch[2], 10) - 1; // 0-11
       regDay = parseInt(dateMatch[3], 10);
+    }
+
+    // 登録日は常に一致と判定し、最優先で表示する (v2.1.3)
+    if (regYear === year && regMonth === month && regDay === day) {
+      return true;
     }
 
     const content = (nippou.content || '').trim();
@@ -1195,15 +1200,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       // B. 一致するものがなく、かつ本文に別の西暦日付が書かれている場合
-      // 登録日のセルであっても、本文で明示的に別の未来日付が指定されているなら登録日には表示しない
-      const isRegDateCell = (regYear === year && regMonth === month && regDay === day);
-      if (isRegDateCell) {
-        // 本文に書かれている西暦日付が「すべて登録日とは異なる」なら、登録日セルには表示しない
-        const allMatchesDifferentFromReg = ymdMatches.every(item => !(item.y === regYear && item.m === regMonth && item.d === regDay));
-        if (allMatchesDifferentFromReg) {
-          return false;
-        }
-      }
+      // 登録日の判定はすでに行っているため、ここでの処理は「登録日以外の日付」へのマッチのみを考慮する
     }
 
     // 2. 本文から月日のみ（M/D または MM/DD）のパターンをチェックする
@@ -1225,11 +1222,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (testMonthDayPattern(content, mShort, dShort) || testMonthDayPattern(content, mLong, dLong)) {
         return true;
       }
-    }
-
-    // 3. 登録日そのものの判定
-    if (regYear === year && regMonth === month && regDay === day) {
-      return true;
     }
 
     return false;
